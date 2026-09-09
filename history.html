@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>학습 기록 · SENSEI</title>
+    <meta name="description" content="지금까지 하쿠에게 가르친 주제와 빈틈 기록." />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="phone">
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="statusbar__icons">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="battery"></span>
+        </div>
+      </div>
+
+      <div class="history-header">
+        <h1>학습 기록</h1>
+        <a class="pill pill--primary" href="./chat.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          새 세션
+        </a>
+      </div>
+
+      <div class="scroll" style="padding: 0 20px 24px">
+        <section>
+          <p class="section-label">지금 진행 중</p>
+          <a class="session card card--tinted" href="./conversation.html">
+            <img src="./mascot.png" alt="" />
+            <div class="session__body">
+              <p class="session__topic">단백질</p>
+              <p class="session__meta">오늘 · 대화 7회</p>
+            </div>
+            <span class="status status--active">진행 중</span>
+          </a>
+        </section>
+
+        <section style="margin-top: 16px">
+          <p class="section-label">이전 학습</p>
+          <a class="session card" href="./conversation.html">
+            <img src="./mascot.png" alt="" />
+            <div class="session__body">
+              <p class="session__topic">미토콘드리아</p>
+              <p class="session__meta">어제 · 빈틈 3개</p>
+            </div>
+            <span class="status">완료</span>
+          </a>
+          <a class="session card" href="./conversation.html">
+            <img src="./mascot.png" alt="" />
+            <div class="session__body">
+              <p class="session__topic">붕당 정치</p>
+              <p class="session__meta">2일 전 · 빈틈 2개</p>
+            </div>
+            <span class="status">완료</span>
+          </a>
+        </section>
+
+        <div class="card tip">
+          <p class="tip__title">같은 주제 다시 배우고 싶어?</p>
+          <p class="tip__text">세션을 새로 시작하면 빈틈 기록이 초기화돼요.</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>학습 시작 · SENSEI</title>
     <meta name="description" content="하쿠에게 오늘 배운 내용을 설명하며 학습을 시작하세요." />
-    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="../styles/style.css" />
   </head>
   <body>
     <div class="phone">
@@ -20,7 +20,13 @@
       <div class="header">
         <span class="logo">SENSEI</span>
         <button type="button" class="icon-btn" aria-label="음성으로 설명하기">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
             <rect x="9" y="2" width="6" height="12" rx="3" />
             <path d="M5 11a7 7 0 0 0 14 0M12 18v4" />
           </svg>
@@ -28,17 +34,25 @@
       </div>
 
       <div class="body body--center">
-        <div class="bubble bubble--sensei" style="max-width: 74%">안녕! 오늘은 뭘 가르쳐 줄 거야?</div>
+        <div class="bubble bubble--sensei" style="max-width: 74%">
+          안녕! 오늘은 뭘 가르쳐 줄 거야?
+        </div>
         <!-- 하쿠 이미지 자리 -->
         <div class="mascot-slot">
-          <img src="./mascot.png" alt="하쿠 마스코트" />
+          <img src="../../public/mascot.png" alt="하쿠 마스코트" />
         </div>
       </div>
 
       <form class="composer" action="./conversation.html">
         <input type="text" placeholder="지수한테 설명해줘..." aria-label="설명 입력" />
         <button class="send" type="submit" aria-label="보내기">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
             <path d="m22 2-7 20-4-9-9-4Z" />
           </svg>
         </button>

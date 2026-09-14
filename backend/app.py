@@ -6,11 +6,12 @@ load_dotenv()
 from flask import Flask, jsonify, request
 from google import genai             
 from google.genai import types
+from flask_cors import CORS
 
-import prompts
+import backend.prompts as prompts
 
 app = Flask(__name__)
-
+CORS(app);
 # Gemini 통신 객체. 함수 밖에 두어 서버 시작 시 1회만 생성하고 계속 재사용한다.
 # 함수 안에 넣으면 요청마다 새로 만들어져 느려진다.
 

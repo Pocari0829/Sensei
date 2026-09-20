@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>프로필 · SENSEI</title>
+    <meta name="description" content="닉네임과 하쿠와 함께한 학습 통계를 확인하세요." />
+    <link rel="stylesheet" href="../styles/style.css" />
+  </head>
+  <body data-page="profile">
+    <div class="phone">
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="statusbar__icons">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="battery"></span>
+        </div>
+      </div>
+
+      <div class="history-header">
+        <h1>프로필</h1>
+      </div>
+
+      <div class="scroll" style="padding: 0 20px 24px">
+        <div class="card profile-card">
+          <img class="profile-card__avatar" src="../../public/mascot.png" alt="" />
+
+          <div class="profile-card__name">
+            <span id="nickname-text"></span>
+            <button type="button" class="icon-btn icon-btn--sm" id="edit-nickname-btn" aria-label="닉네임 수정">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="profile-card__edit" id="nickname-edit" hidden>
+            <input type="text" id="nickname-input" maxlength="16" aria-label="닉네임 입력" />
+            <button type="button" class="pill pill--primary" id="save-nickname-btn">저장</button>
+          </div>
+        </div>
+
+        <section style="margin-top: 16px">
+          <p class="section-label">학습 통계</p>
+          <div class="card stat-list">
+            <div class="stat-row">
+              <span class="stat-row__label">총 학습 세션</span>
+              <span class="stat-row__value" id="stat-sessions">0개</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-row__label">하쿠와 나눈 대화</span>
+              <span class="stat-row__value" id="stat-messages">0개</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-row__label">최근 학습 주제</span>
+              <span class="stat-row__value" id="stat-topic">아직 없음</span>
+            </div>
+          </div>
+        </section>
+
+        <button type="button" class="pill pill--primary" id="logout-btn" style="width: 100%; margin-top: 20px">
+          로그아웃
+        </button>
+      </div>
+
+      <div class="bottom-nav" id="bottom-nav"></div>
+    </div>
+
+    <script type="module" src="../scripts/nav.js"></script>
+    <script type="module" src="../scripts/profile.js"></script>
+  </body>
+</html>

@@ -24,33 +24,69 @@ HAKU_MODEL = os.getenv("HAKU_MODEL", "gemini-3-flash-preview")
 CHECK_MODEL = os.getenv("CHECK_MODEL", "gemini-3-flash-preview")
 
 
+def _history_to_contents(history):
+    """프론트가 보낸 대화 기록을 Gemini 의 Content 리스트로 바꾼다.
+
+    history 는 [{role: "user" | "sensei", text: "..."}, ...] 형태.
+    role 이 "sensei" 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
+    형식이 이상한 항목은 조용히 건너뛴다 (프론트 버그 때문에 500 나면 안 되니까).
+    """
+    contents = []
+    if not isinstance(history, list):
+        return contents
+
+    for turn in history:
+        if not isinstance(turn, dict):
+            continue
+
+        text = turn.get("text")
+        if not text or not str(text).strip():
+            continue
+
+        role = "model" if turn.get("role") == "sensei" else "user"
+        contents.append(types.Content(role=role, parts=[types.Part(text=str(text))]))
+
+    return contents
+
+
 @app.post("/ask-haku")
 def ask_haku():
     """하쿠 꼬리질문 반환"""
     # 프론트가 보낸 JSON을 파이썬 딕셔너리로 변환
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     # 사용자가 방금 한 말을 꺼낸다.
     message = data.get("message")
 
+    # 지금까지의 대화 기록 (선택). 프론트가 안 보내면 그냥 이번 메시지 하나로만 대화한다.
+    history = data.get("history", [])
+
     # message 가 비어 있으면 Gemini 호출 자체가 400 으로 터진다.
     # 여기서 미리 걸러서 프론트가 읽을 수 있는 형태로 돌려준다.
-    if not message:
+    if not message or not str(message).strip():
         return jsonify(ok=False, error="message 가 비어 있습니다."), 400
 
-    res = client.models.generate_content(
-        model=HAKU_MODEL,
-        # contents = 매번 바뀌는 값 (사용자가 방금 한 말)
-        contents=message,
+    # 이전 대화 + 이번 메시지를 순서대로 이어 붙여서 맥락을 유지한다.
+    contents = _history_to_contents(history)
+    contents.append(types.Content(role="user", parts=[types.Part(text=str(message))]))
 
-        config=types.GenerateContentConfig(
-            # system_instruction = 항상 같은 값 (하쿠의 역할 지시)
-            # 프롬프트를 contents 에 사용자 말과 같이 붙여 보내면
-            # Gemini 가 그걸 '사용자가 한 말'로 취급해 캐릭터가 무너진다.
-            # 반드시 여기로 분리해서 넣을 것.
-            system_instruction=prompts.SYSTEM_PROMPT,
-        ),
-    )
+    try:
+        res = client.models.generate_content(
+            model=HAKU_MODEL,
+            # contents = 매번 바뀌는 값 (지금까지의 대화 + 사용자가 방금 한 말)
+            contents=contents,
+            config=types.GenerateContentConfig(
+                # system_instruction = 항상 같은 값 (하쿠의 역할 지시)
+                # 프롬프트를 contents 에 사용자 말과 같이 붙여 보내면
+                # Gemini 가 그걸 '사용자가 한 말'로 취급해 캐릭터가 무너진다.
+                # 반드시 여기로 분리해서 넣을 것.
+                system_instruction=prompts.SYSTEM_PROMPT,
+            ),
+        )
+    except Exception as e:
+        # Gemini 쪽 오류(키 문제, 네트워크, 모델명 오타 등)를 그대로 500 HTML 로 터뜨리면
+        # 프론트의 res.json() 이 깨진다. JSON 으로 감싸서 돌려준다.
+        return jsonify(ok=False, error=f"하쿠가 응답하지 못했어요: {e}"), 500
 
     # res.text 가 실제 하쿠의 문장이다.
     return jsonify(ok=True, question=res.text)

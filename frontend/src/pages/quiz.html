@@ -18,7 +18,7 @@
       </div>
 
       <div class="quiz-header">
-        <a class="icon-btn" href="./conversation.html" aria-label="뒤로 가기">
+        <a class="icon-btn" href="./chat.html" aria-label="뒤로 가기">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -35,7 +35,7 @@
       <div class="scroll" style="padding: 0 20px 12px">
         <div>
           <h2 class="quiz-title">오늘의 시험지</h2>
-          <p class="quiz-sub">단백질 · 빈틈 2개 발견됨</p>
+          <p class="quiz-sub" id="quiz-sub">단백질 · 빈틈 2개 발견됨</p>
           <span class="badge">
             <svg
               viewBox="0 0 24 24"
@@ -77,5 +77,12 @@
         >
       </div>
     </div>
+
+    <!--
+      참고: 시험지 문항 생성은 아직 백엔드에 연결돼 있지 않다 (app.py의 /generate-quiz는 주석 처리된 상태).
+      지금은 상단 주제 이름만 채팅 화면에서 넘어온 topic 쿼리 파라미터로 채우고,
+      문항 내용 자체는 예시 그대로 둔다.
+    -->
+    <script type="module" src="../scripts/quiz.js"></script>
   </body>
 </html>

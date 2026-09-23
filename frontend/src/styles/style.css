@@ -24,6 +24,13 @@
   padding: 0;
 }
 
+/* JS가 상태에 따라 요소를 껐다 켰다 할 때 쓰는 hidden 속성.
+   .header/.topic-header 처럼 display:flex를 직접 지정한 클래스가 있으면
+   기본 [hidden] 규칙보다 우선순위가 낮아서 무시되므로 !important로 강제한다. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: "Noto Sans KR", system-ui, sans-serif;
   background: var(--background);
@@ -572,4 +579,140 @@ body {
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted-fg);
+}
+
+/* 하단 탭 바 (채팅 / 학습 기록 / 프로필) — nav.js가 매번 그려 넣는다 */
+.bottom-nav {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-around;
+  padding: 6px 8px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.bottom-nav__item {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted-fg);
+  text-decoration: none;
+  cursor: pointer;
+}
+.bottom-nav__item svg {
+  width: 20px;
+  height: 20px;
+}
+.bottom-nav__item.is-active {
+  color: var(--primary);
+  background: var(--surface-tint);
+}
+
+/* 하쿠가 답을 준비 중일 때 말풍선 안에서 통통 튀는 점 세 개 */
+.typing-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+}
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted-fg);
+  animation: typing-bounce 1.1s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* 프로필 화면 */
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+}
+.profile-card__avatar {
+  width: 64px;
+  height: 64px;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--surface-tint);
+  object-fit: contain;
+}
+.profile-card__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.profile-card__edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+.profile-card__edit input {
+  flex: 1;
+  height: 40px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-tint);
+  color: var(--foreground);
+  outline: none;
+}
+.profile-card__edit input:focus {
+  border-color: var(--primary);
+}
+.stat-list {
+  padding: 4px 16px;
+}
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+.stat-row + .stat-row {
+  border-top: 1px solid var(--border);
+}
+.stat-row__label {
+  font-size: 12.5px;
+  color: var(--muted-fg);
+}
+.stat-row__value {
+  font-size: 13px;
+  font-weight: 700;
 }

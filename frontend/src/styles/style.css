@@ -716,3 +716,21 @@ body {
   font-size: 13px;
   font-weight: 700;
 }
+
+/* 타이핑 효과 — 하쿠가 한 글자씩 말하는 동안 끝에 커서가 깜빡인다 */
+.bubble--sensei.is-typing::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: typing-caret 0.8s steps(1) infinite;
+}
+
+@keyframes typing-caret {
+  50% {
+    opacity: 0;
+  }
+}

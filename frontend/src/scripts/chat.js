@@ -99,6 +99,48 @@ function setSending(sending) {
   sendBtn.disabled = sending;
 }
 
+// ─────────────────────────────────────────────
+// 타이핑 효과: 하쿠의 대사를 한 글자씩 찍어 보여준다.
+// render() 가 말풍선을 통째로 다시 그린 "직후"에 호출해서,
+// 마지막 하쿠 말풍선의 글자만 지웠다가 하나씩 되채운다.
+// (store 에는 이미 전체 문장이 들어있으므로 내용이 사라질 걱정은 없다)
+// ─────────────────────────────────────────────
+
+// 한 글자가 찍히는 간격(ms). 키우면 느려진다.
+// 15 = 빠름,  28 = 지금,  50 = 느긋함
+const TYPING_SPEED = 28;
+
+let typingTimer = null;
+
+function typeLastSenseiBubble() {
+  const bubbles = messageList.querySelectorAll(".bubble--sensei");
+  const el = bubbles[bubbles.length - 1];
+  if (!el) return;
+
+  // 한글은 한 글자가 한 칸이지만 이모지는 두 칸을 차지한다.
+  // Array.from 을 쓰면 이모지도 깨지지 않고 한 글자로 센다.
+  const chars = Array.from(el.textContent);
+
+  el.textContent = "";
+  el.classList.add("is-typing");
+
+  // 이전 타이핑이 돌고 있었다면 멈춘다 (연속 전송 대비).
+  clearInterval(typingTimer);
+
+  let i = 0;
+  typingTimer = setInterval(() => {
+    el.textContent += chars[i];
+    i += 1;
+    // 글자가 늘어나 말풍선이 길어지므로 계속 따라 내려간다.
+    messageList.scrollTop = messageList.scrollHeight;
+
+    if (i >= chars.length) {
+      clearInterval(typingTimer);
+      el.classList.remove("is-typing");
+    }
+  }, TYPING_SPEED);
+}
+
 async function sendMessage(rawText) {
   const text = rawText.trim();
   if (!text || isSending) return;
@@ -130,6 +172,7 @@ async function sendMessage(rawText) {
   if (result.ok) {
     store.addMessage(activeSession, "sensei", result.question);
     render();
+    typeLastSenseiBubble();
   } else {
     messageList.insertAdjacentHTML(
       "beforeend",

@@ -20,15 +20,21 @@
       <div class="body" style="padding: 0 24px 32px">
         <header class="login-title">
           <h1>SENSEI</h1>
-          <p>가르치며 배우는 AI 학습</p>
+          <p>가르치며 배우는 <span class="mark">AI 학습</span></p>
         </header>
 
         <!-- 하쿠 이미지 자리 -->
         <div
-          class="mascot-slot mascot-slot--lg"
+          class="mascot-slot mascot-slot--lg blob-stage"
           style="flex: 1; align-items: center; padding: 16px 0"
         >
-          <img src="../../public/mascot.png" alt="하쿠 마스코트" />
+          <span class="cloud cloud--1"></span>
+          <span class="cloud cloud--2"></span>
+          <span class="cloud cloud--3"></span>
+          <div>
+            <img src="../../public/mascot.png" alt="하쿠 마스코트" />
+            <div class="mascot-ground"></div>
+          </div>
         </div>
 
         <div class="login-actions">
@@ -67,6 +73,7 @@
             </svg>
             카카오로 로그인
           </a>
+          <p class="login-fineprint">로그인하면 하쿠가 당신만의 학습 기록을 기억하기 시작해요.</p>
         </div>
       </div>
     </div>

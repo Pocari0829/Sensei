@@ -14,6 +14,12 @@ const dragHint = document.getElementById("drag-hint");
 const idleHeader = document.getElementById("idle-header");
 const topicHeader = document.getElementById("topic-header");
 const topicNameEl = document.getElementById("topic-name");
+const topicDisplay = document.getElementById("topic-display");
+const topicEditWrap = document.getElementById("topic-edit");
+const topicActions = document.getElementById("topic-actions");
+const topicInput = document.getElementById("topic-input");
+const editTopicBtn = document.getElementById("edit-topic-btn");
+const topicSaveBtn = document.getElementById("topic-save-btn");
 const emptyState = document.getElementById("empty-state");
 const messageList = document.getElementById("message-list");
 const quickActions = document.getElementById("quick-actions");
@@ -194,6 +200,48 @@ newTopicBtn.addEventListener("click", () => {
   activeSession = store.createSession();
   render();
   composerInput.focus();
+});
+
+// ─────────────────────────────────────────────
+// 주제 이름 수정: 자동으로 붙은 이름(deriveTopic)이 마음에 안 들면
+// 연필 버튼을 눌러 학습자가 직접 바꿀 수 있다.
+// ─────────────────────────────────────────────
+function enterTopicEdit() {
+  if (!activeSession) return;
+  topicInput.value = activeSession.topic || "";
+  topicDisplay.hidden = true;
+  topicActions.hidden = true;
+  topicEditWrap.hidden = false;
+  topicInput.focus();
+  topicInput.select();
+}
+
+function exitTopicEdit() {
+  topicDisplay.hidden = false;
+  topicActions.hidden = false;
+  topicEditWrap.hidden = true;
+}
+
+function saveTopic() {
+  if (activeSession) {
+    const value = topicInput.value.trim();
+    activeSession.topic = value || activeSession.topic || "학습 중";
+    store.saveSession(activeSession);
+    topicNameEl.textContent = activeSession.topic;
+  }
+  exitTopicEdit();
+}
+
+editTopicBtn.addEventListener("click", enterTopicEdit);
+topicSaveBtn.addEventListener("click", saveTopic);
+topicInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    saveTopic();
+  }
+  if (e.key === "Escape") {
+    exitTopicEdit();
+  }
 });
 
 easierBtn.addEventListener("click", () => sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?"));

@@ -33,10 +33,12 @@ function makeId() {
 }
 
 /** 문장이 너무 길면 세션 목록/헤더에 쓸 짧은 주제 이름으로 잘라준다. */
+const TOPIC_MAX_LENGTH = 10;
+
 export function deriveTopic(text) {
   const trimmed = text.trim().replace(/\s+/g, " ");
-  if (trimmed.length <= 14) return trimmed;
-  return `${trimmed.slice(0, 14)}…`;
+  if (trimmed.length <= TOPIC_MAX_LENGTH) return trimmed;
+  return `${trimmed.slice(0, TOPIC_MAX_LENGTH)}…`;
 }
 
 export function getAllSessions() {
@@ -104,7 +106,9 @@ export function addMessage(session, role, text) {
 }
 
 export function getStats() {
-  const sessions = getAllSessions();
+  // 메시지를 하나도 안 보낸 빈 세션(새 세션 누르고 아무것도 안 한 경우)은
+  // history.js 목록에서도 빼고 있으므로, 통계에서도 똑같이 빼야 숫자가 맞는다.
+  const sessions = getAllSessions().filter((s) => s.messages.length > 0);
   const totalMessages = sessions.reduce((sum, s) => sum + s.messages.length, 0);
   const lastTopic = sessions.find((s) => s.topic)?.topic ?? null;
 

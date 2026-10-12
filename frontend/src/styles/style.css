@@ -1,5 +1,6 @@
 /* SENSEI 정적 화면 공통 스타일 (순수 CSS) */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Space+Grotesk:wght@700&display=swap");
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap");
 
 :root {
   --background: #eeeaf7;
@@ -13,7 +14,7 @@
   --kakao: #fee500;
   --kakao-fg: #3c2f16;
   --signal: #34c759;
-  --shadow-soft: 0 4px 16px -6px rgba(60, 45, 130, 0.18);
+  --shadow-soft: 0 1px 2px rgba(38, 34, 74, 0.04), 0 6px 16px -8px rgba(60, 45, 130, 0.16);
   --shadow-bubble: 0 8px 20px -8px rgba(79, 70, 200, 0.45);
   --shadow-phone: 0 24px 60px -24px rgba(60, 45, 130, 0.35);
 }
@@ -32,7 +33,7 @@
 }
 
 body {
-  font-family: "Noto Sans KR", system-ui, sans-serif;
+  font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
   background: var(--background);
   color: var(--foreground);
   display: flex;
@@ -54,7 +55,7 @@ body {
 }
 
 .phone--tinted {
-  background: var(--surface-tint);
+  background: linear-gradient(180deg, var(--card) 0%, var(--surface-tint) 46%, var(--surface-tint) 100%);
 }
 
 @media (min-width: 640px) {
@@ -105,9 +106,9 @@ body {
 }
 .logo {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 17px;
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
 }
 .icon-btn {
   display: grid;
@@ -124,6 +125,9 @@ body {
   background: var(--primary);
   color: var(--primary-fg);
   box-shadow: var(--shadow-bubble);
+}
+.icon-btn--primary:active {
+  opacity: 0.85;
 }
 .icon-btn--sm {
   width: 28px;
@@ -145,6 +149,7 @@ body {
 }
 .body--center {
   justify-content: center;
+  align-items: center;
   gap: 14px;
 }
 .scroll {
@@ -207,6 +212,12 @@ body {
 .bubble--tint {
   border-bottom-left-radius: 6px;
   background: var(--surface-tint);
+}
+.bubble--greeting {
+  max-width: 78%;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 .system {
   margin-bottom: 10px;
@@ -272,6 +283,13 @@ body {
   box-shadow: var(--shadow-bubble);
   cursor: pointer;
 }
+.send:active {
+  opacity: 0.85;
+}
+.send:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+}
 .send svg {
   width: 18px;
   height: 18px;
@@ -283,22 +301,33 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 9px 14px;
   font: inherit;
   font-size: 12px;
   font-weight: 700;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--card);
-  color: var(--primary);
-  box-shadow: var(--shadow-soft);
+  color: var(--foreground);
   cursor: pointer;
   text-decoration: none;
 }
+.pill:active {
+  opacity: 0.7;
+}
 .pill--primary {
+  border-color: transparent;
   background: var(--primary);
   color: var(--primary-fg);
   box-shadow: var(--shadow-bubble);
+}
+.pill--ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--muted-fg);
+}
+.pill--ghost:active {
+  opacity: 0.6;
 }
 .pill svg {
   width: 14px;
@@ -321,19 +350,28 @@ body {
 }
 .login-title h1 {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 30px;
-  letter-spacing: 0.2em;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
   line-height: 1;
 }
 .login-title p {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--muted-fg);
 }
 .login-actions {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding-bottom: 12px;
+}
+.login-fineprint {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted-fg);
 }
 .oauth {
   display: flex;
@@ -343,13 +381,18 @@ body {
   height: 52px;
   font-size: 14px;
   font-weight: 700;
+  border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--card);
   color: var(--foreground);
   box-shadow: var(--shadow-soft);
   text-decoration: none;
 }
+.oauth:active {
+  opacity: 0.85;
+}
 .oauth--kakao {
+  border-color: transparent;
   background: var(--kakao);
   color: var(--kakao-fg);
 }
@@ -362,17 +405,98 @@ body {
 .card {
   border-radius: 24px;
   background: var(--card);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-soft);
 }
 .card--tinted {
   background: var(--surface-tint);
+  border-color: transparent;
   box-shadow: none;
 }
 .section-label {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--muted-fg);
+}
+
+/* 장식용 블롭 — 마스코트 뒤에 깔아서 밋밋한 여백에 포인트를 준다 */
+.blob-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.blob-stage::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 230px;
+  height: 230px;
+  transform: translate(-50%, -54%);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(79, 70, 200, 0.14), rgba(79, 70, 200, 0) 72%);
+  z-index: 0;
+}
+.blob-stage > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 구름 데코 — 마스코트가 허공에 뜬 느낌을 줄이는 배경 장식 */
+.cloud {
+  position: absolute;
+  z-index: 0;
+  border-radius: 999px;
+  background: rgba(79, 70, 200, 0.1);
+}
+.cloud--1 {
+  top: 14%;
+  left: 12%;
+  width: 46px;
+  height: 18px;
+}
+.cloud--2 {
+  top: 26%;
+  right: 10%;
+  width: 34px;
+  height: 14px;
+}
+.cloud--3 {
+  bottom: 18%;
+  left: 16%;
+  width: 28px;
+  height: 11px;
+}
+
+/* 마스코트 발밑 그림자 — 공중에 뜬 느낌 대신 바닥에 서 있는 느낌 */
+.mascot-ground {
+  position: relative;
+  z-index: 1;
+  width: 120px;
+  height: 18px;
+  margin: -10px auto 0;
+  border-radius: 999px;
+  background: radial-gradient(ellipse, rgba(38, 34, 74, 0.14), rgba(38, 34, 74, 0) 70%);
+}
+
+/* 마커(형광펜) 밑줄 — 헤드라인의 핵심 단어를 강조 */
+.mark {
+  position: relative;
+  z-index: 0;
+  white-space: nowrap;
+}
+.mark::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  bottom: 1px;
+  height: 0.4em;
+  background: rgba(79, 70, 200, 0.22);
+  border-radius: 3px;
+  transform: rotate(-1deg);
+  z-index: -1;
 }
 
 /* 대화 화면 */
@@ -415,6 +539,28 @@ body {
   align-items: center;
   gap: 6px;
 }
+.topic-edit {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+.topic-edit input {
+  flex: 1;
+  height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-tint);
+  color: var(--foreground);
+  outline: none;
+}
+.topic-edit input:focus {
+  border-color: var(--primary);
+}
 
 /* 시험지 */
 .quiz-header {
@@ -428,21 +574,24 @@ body {
   padding-right: 28px;
   text-align: center;
   font-size: 14px;
+  font-weight: 700;
 }
 .quiz-title {
-  font-size: 21px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .quiz-sub {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-fg);
 }
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: 8px;
-  padding: 4px 10px;
+  margin-top: 10px;
+  padding: 5px 10px;
   font-size: 11px;
   font-weight: 700;
   border-radius: 999px;
@@ -455,8 +604,9 @@ body {
 }
 .q-card {
   margin-top: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: 18px;
+  border-left: 3px solid var(--primary);
 }
 .q-card__label {
   font-size: 11px;
@@ -465,8 +615,23 @@ body {
 }
 .q-card__text {
   margin-top: 6px;
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+/* 진행도 바 — 시험지 하단의 점 대신 토스/듀오링고 스타일의 얇은 바 */
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-tint);
+  overflow: hidden;
+}
+.progress-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
 }
 .q-card textarea {
   width: 100%;
@@ -518,26 +683,28 @@ body {
   padding: 16px 20px 12px;
 }
 .history-header h1 {
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .session {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 10px;
-  padding: 10px 12px;
+  padding: 12px;
   border-radius: 24px;
   text-decoration: none;
   color: inherit;
 }
 .session img {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
-  padding: 4px;
+  padding: 5px;
   border-radius: 999px;
-  background: var(--card);
-  box-shadow: var(--shadow-soft);
+  background: var(--surface-tint);
+  box-shadow: none;
   object-fit: contain;
 }
 .session__body {
@@ -545,7 +712,7 @@ body {
   min-width: 0;
 }
 .session__topic {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
 }
 .session__meta {
@@ -554,6 +721,7 @@ body {
   color: var(--muted-fg);
 }
 .status {
+  flex-shrink: 0;
   padding: 4px 10px;
   font-size: 10px;
   font-weight: 700;
@@ -567,7 +735,7 @@ body {
 }
 .tip {
   margin-top: 16px;
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 .tip__title {
   font-size: 13px;
@@ -577,6 +745,29 @@ body {
 .tip__text {
   margin-top: 4px;
   font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-fg);
+}
+
+/* 학습 기록이 비어 있을 때: 마스코트를 세워둔 큼직한 안내 카드 */
+.empty-illustration {
+  margin-top: 24px;
+  padding: 36px 24px 28px;
+  text-align: center;
+}
+.empty-illustration img {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 16px;
+  object-fit: contain;
+}
+.empty-illustration__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.empty-illustration__text {
+  margin-top: 6px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted-fg);
 }
@@ -715,6 +906,32 @@ body {
 .stat-row__value {
   font-size: 13px;
   font-weight: 700;
+}
+
+/* 프로필 통계 타일 — 작은 표 대신 큰 숫자로 보여준다 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px 14px;
+}
+.stat-tile__value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--primary);
+  word-break: keep-all;
+}
+.stat-tile__label {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted-fg);
 }
 
 /* 타이핑 효과 — 하쿠가 한 글자씩 말하는 동안 끝에 커서가 깜빡인다 */

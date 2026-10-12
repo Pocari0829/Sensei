@@ -22,7 +22,7 @@
       </div>
 
       <div class="scroll" style="padding: 0 20px 24px">
-        <div class="card profile-card">
+        <div class="card profile-card blob-stage">
           <img class="profile-card__avatar" src="../../public/mascot.png" alt="" />
 
           <div class="profile-card__name">
@@ -47,25 +47,25 @@
           </div>
         </div>
 
-        <section style="margin-top: 16px">
+        <section style="margin-top: 20px">
           <p class="section-label">학습 통계</p>
-          <div class="card stat-list">
-            <div class="stat-row">
-              <span class="stat-row__label">총 학습 세션</span>
-              <span class="stat-row__value" id="stat-sessions">0개</span>
+          <div class="stat-grid">
+            <div class="card stat-tile">
+              <span class="stat-tile__value" id="stat-sessions">0</span>
+              <span class="stat-tile__label">총 학습 세션</span>
             </div>
-            <div class="stat-row">
-              <span class="stat-row__label">하쿠와 나눈 대화</span>
-              <span class="stat-row__value" id="stat-messages">0개</span>
+            <div class="card stat-tile">
+              <span class="stat-tile__value" id="stat-messages">0</span>
+              <span class="stat-tile__label">하쿠와 나눈 대화</span>
             </div>
-            <div class="stat-row">
-              <span class="stat-row__label">최근 학습 주제</span>
-              <span class="stat-row__value" id="stat-topic">아직 없음</span>
+            <div class="card stat-tile">
+              <span class="stat-tile__value" id="stat-topic" style="font-size: 14px">아직 없음</span>
+              <span class="stat-tile__label">최근 학습 주제</span>
             </div>
           </div>
         </section>
 
-        <button type="button" class="pill pill--primary" id="logout-btn" style="width: 100%; margin-top: 20px">
+        <button type="button" class="pill pill--ghost" id="logout-btn" style="width: 100%; margin-top: 24px">
           로그아웃
         </button>
       </div>

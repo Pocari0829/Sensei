@@ -45,9 +45,10 @@ function sessionCard(session, isActive) {
 
 function emptyState() {
   return `
-    <div class="card tip">
-      <p class="tip__title">아직 학습 기록이 없어요</p>
-      <p class="tip__text">채팅에서 하쿠에게 오늘 배운 내용을 설명하면 여기에 기록이 쌓여요.</p>
+    <div class="card empty-illustration">
+      <img src="../../public/mascot.png" alt="" />
+      <p class="empty-illustration__title">아직 학습 기록이 없어요</p>
+      <p class="empty-illustration__text">채팅에서 하쿠에게 오늘 배운 내용을 설명하면<br />여기에 기록이 쌓여요.</p>
     </div>`;
 }
 

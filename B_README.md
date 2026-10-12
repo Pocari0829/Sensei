@@ -19,12 +19,15 @@ pip install -r backend/requirements.txt
 python -m backend.app
 ```
 
-**터미널 2 — 프론트**
+**터미널 2 — 프론트** (프로젝트 폴더에서, `cd frontend` 하지 않습니다)
 
 ```powershell
-cd frontend
-python -m http.server 8000
+.\venv\Scripts\Activate.ps1
+python serve_frontend.py
 ```
+
+> `python -m http.server 8000` 으로도 열리지만, 그러면 브라우저가 예전 js 파일을 계속 써서
+> 코드를 고쳐도 화면이 안 바뀝니다 (매번 Ctrl+Shift+R 필요). `serve_frontend.py` 는 항상 최신 파일을 줍니다.
 
 **브라우저**
 

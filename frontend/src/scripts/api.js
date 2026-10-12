@@ -40,3 +40,55 @@ export async function askHaku(message, history = []) {
     return { ok: false, error: message };
   }
 }
+
+// ─────────────────────────────────────────────
+// (추가) 정오 판별 / 시험지 생성
+// askHaku 와 같은 방식: 실패해도 throw 하지 않고 {ok:false, error} 로 돌려준다.
+// ─────────────────────────────────────────────
+
+async function postJson(path, body) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(`서버 응답을 읽을 수 없어요 (HTTP ${res.status})`);
+    }
+
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `요청이 실패했어요 (HTTP ${res.status})`);
+    }
+
+    return data;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * 방금 한 설명이 맞는지 판별만 받아온다.
+ * (채팅에서는 /ask-haku 가 알아서 먼저 판별하므로 따로 부를 필요는 없다)
+ *
+ * @returns {Promise<{ok: true, is_correct: boolean, feedback: string} | {ok: false, error: string}>}
+ */
+export function checkSystem(message, history = []) {
+  return postJson("/check-system", { message, history });
+}
+
+/**
+ * 지금까지의 대화로 시험지를 만든다.
+ *
+ * @param {{role: "user"|"sensei", text: string}[]} history - 대화 전체.
+ * @param {string[]} previous - 이미 낸 문제의 지문들. 보내면 이것과 겹치지 않는 새 문제를 만든다.
+ * @returns {Promise<{ok: true, items: {question: string, answers: string[]}[]} | {ok: false, error: string}>}
+ */
+export function generateQuiz(history = [], previous = []) {
+  return postJson("/generate-quiz", { history, previous });
+}

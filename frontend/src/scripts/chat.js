@@ -277,3 +277,19 @@ function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+// ─────────────────────────────────────────────
+// (추가) 말로 보내기 — 녹음과 마이크 버튼은 voice.js 에 있다.
+// 여기서는 채팅 화면의 요소와 함수만 넘겨서 연결한다.
+// ─────────────────────────────────────────────
+import { setupVoiceInput } from "./voice.js";
+
+setupVoiceInput({
+  sendBtn,
+  composerInput,
+  messageList,
+  headerMicBtn: idleHeader.querySelector('button[aria-label="음성으로 설명하기"]'),
+  systemAlert,
+  isSending: () => isSending,
+  sendMessage,
+});

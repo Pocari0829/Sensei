@@ -951,3 +951,47 @@ body {
     opacity: 0;
   }
 }
+
+/* 말로 보내기 — chat.js 가 입력창의 보내기 버튼 앞에 끼워 넣는 마이크 버튼 */
+.mic {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-tint);
+  color: var(--primary);
+  cursor: pointer;
+}
+.mic svg {
+  width: 18px;
+  height: 18px;
+}
+.mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 녹음 중: 입력창 옆 마이크와 헤더의 "음성으로 설명하기" 버튼이 빨갛게 바뀌고 천천히 깜빡인다 */
+.mic.is-recording,
+.icon-btn.is-recording {
+  border-color: transparent;
+  background: #e5484d;
+  color: #ffffff;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  50% {
+    box-shadow: 0 0 0 8px rgba(229, 72, 77, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic.is-recording,
+  .icon-btn.is-recording {
+    animation: none;
+  }
+}

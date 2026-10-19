@@ -71,14 +71,40 @@ function escapeQuizHtml(text) {
   return div.innerHTML;
 }
 
+/** 객관식 문제인지. (예전에 저장된 문제는 type 이 없으므로 빈칸 문제로 본다) */
+function isChoice(item) {
+  return item.type === "choice" && Array.isArray(item.choices) && item.choices.length > 0;
+}
+
 function quizCard(item, index) {
   const n = index + 1;
+
+  if (isChoice(item)) {
+    const options = item.choices
+      .map(
+        (choice, k) => `
+        <label class="q-choice">
+          <input type="radio" name="q-${index}" value="${k}" />
+          <span class="q-choice__num">${k + 1}</span>
+          <span class="q-choice__text">${escapeQuizHtml(choice)}</span>
+        </label>`,
+      )
+      .join("");
+
+    return `
+    <div class="card q-card" data-index="${index}">
+      <p class="q-card__label">Q ${n} · 객관식</p>
+      <p class="q-card__text">${escapeQuizHtml(item.question)}</p>
+      <div class="q-choices" role="radiogroup" aria-label="Q ${n} 보기">${options}</div>
+    </div>`;
+  }
+
   const count = item.answers?.length ?? 0;
   const placeholder =
     count > 1 ? `빈칸 ${count}개의 답을 순서대로 입력하세요...` : "답을 입력하세요...";
 
   return `
-    <div class="card q-card">
+    <div class="card q-card" data-index="${index}">
       <p class="q-card__label">Q ${n}</p>
       <p class="q-card__text">${escapeQuizHtml(item.question)}</p>
       <textarea rows="2" placeholder="${placeholder}" aria-label="Q ${n} 답안"></textarea>
@@ -114,15 +140,35 @@ function updatePager(total) {
   if (pagerText) pagerText.textContent = total > 0 ? `1 / ${total}` : "0 / 0";
 }
 
-/** from 번째 문제부터: 답 입력칸에 저장된 답을 채우고, 고칠 때마다 같이 저장되게 한다. */
+/**
+ * from 번째 문제부터: 저장된 답을 채우고, 고칠 때마다 같이 저장되게 한다.
+ * 빈칸 문제는 입력한 글을, 객관식은 고른 보기의 글을 userAnswers 에 저장한다.
+ */
 function bindAnswers(sessionId, quiz, from = 0) {
-  document.querySelectorAll(".q-card textarea").forEach((textarea, i) => {
+  const setAnswer = (i, value) => {
+    quiz.userAnswers = quiz.userAnswers ?? [];
+    quiz.userAnswers[i] = value;
+    saveQuiz(sessionId, quiz);
+  };
+
+  document.querySelectorAll(".q-card[data-index]").forEach((card) => {
+    const i = Number(card.dataset.index);
     if (i < from) return;
-    textarea.value = quiz.userAnswers?.[i] ?? "";
-    textarea.addEventListener("input", () => {
-      quiz.userAnswers = quiz.userAnswers ?? [];
-      quiz.userAnswers[i] = textarea.value;
-      saveQuiz(sessionId, quiz);
+    const saved = quiz.userAnswers?.[i] ?? "";
+
+    const textarea = card.querySelector("textarea");
+    if (textarea) {
+      textarea.value = saved;
+      textarea.addEventListener("input", () => setAnswer(i, textarea.value));
+      return;
+    }
+
+    const choices = quiz.items[i]?.choices ?? [];
+    card.querySelectorAll('input[type="radio"]').forEach((radio) => {
+      radio.checked = saved !== "" && choices[Number(radio.value)] === saved;
+      radio.addEventListener("change", () => {
+        if (radio.checked) setAnswer(i, choices[Number(radio.value)]);
+      });
     });
   });
 }
@@ -204,9 +250,11 @@ async function loadQuiz() {
   );
 
   // 이미 낸 문제를 같이 보내서, 겹치지 않는 새 문제를 받는다.
+  // 문제 유형은 객관식 → 빈칸 → 객관식 ... 순서로 번갈아 낸다.
   const result = await generateQuiz(
     history,
     quiz.items.map((item) => item.question),
+    before % 2 === 0 ? "choice" : "blank",
   );
 
   // 실패해도 예전 문제는 화면에 그대로 남는다. 저장도 바꾸지 않으므로 다음에 다시 시도된다.

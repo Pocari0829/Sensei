@@ -3,7 +3,7 @@
 주소는 3개다.
     POST /ask-haku       사용자의 설명 → 하쿠의 꼬리질문 (정오 판별을 먼저 거친다)
     POST /check-system   정오 판별만 따로
-    POST /generate-quiz  지금까지의 대화 → 빈칸 문제 1개
+    POST /generate-quiz  지금까지의 대화 → 문제 1개 (빈칸 또는 객관식)
 
 /ask-haku 로 메시지가 오면 아래 순서로 지나간다. 이 파일도 같은 순서로 적혀 있다.
     1) check_before_haku()    정오 판별. 틀렸으면 여기서 "틀렸어요. ..." 로 바로 응답하고 끝난다.
@@ -78,6 +78,18 @@ class QuizItem(BaseModel):
 # 시험지 (문제 목록)
 class QuizResult(BaseModel):
     items: list[QuizItem] = Field(description="문제는 딱 1개만 담는다.")
+
+
+# 객관식 문제 하나
+class ChoiceItem(BaseModel):
+    question: str = Field(description="물음으로 끝나는 객관식 문제의 지문.")
+    choices: list[str] = Field(description="보기 4개. 정답은 딱 하나이고, 나머지는 그럴듯하지만 틀린 보기.")
+    answer_index: int = Field(description="choices 중 정답의 위치 (0부터 시작).")
+
+
+# 객관식 시험지 (문제 목록)
+class ChoiceResult(BaseModel):
+    items: list[ChoiceItem] = Field(description="문제는 딱 1개만 담는다.")
 
 
 # ─────────────────────────────────────────────
@@ -329,11 +341,13 @@ def check_system():
 def generate_quiz():
     """지금까지의 대화로 시험지(빈칸 문제)를 만든다. [퀴즈 풀기] 를 눌렀을 때 호출된다.
 
-    받는 것:     {history, previous?}  (previous = 이미 낸 문제의 지문들)
-    돌려주는 것: {ok: true, items: [{question: "...", answers: ["...", ...]}]}  (문제는 항상 1개)
+    받는 것:     {history, previous?, type?}  (previous = 이미 낸 문제의 지문들, type = "blank" | "choice")
+    돌려주는 것: {ok: true, items: [{type, question: "...", answers: ["...", ...], choices?: [...]}]}  (문제는 항상 1개)
+        type 이 "choice"(객관식)면 choices 에 보기 4개가 오고, answers 에는 정답 보기 1개만 담긴다.
     """
     data = request.get_json(silent=True) or {}
     contents = _history_to_contents(data.get("history", []))
+    quiz_type = "choice" if data.get("type") == "choice" else "blank"
 
     if not contents:
         return jsonify(ok=False, error="대화 기록이 없어서 문제를 만들 수 없어요."), 400
@@ -355,22 +369,46 @@ def generate_quiz():
         )
     contents.append(types.Content(role="user", parts=[types.Part(text=request_text)]))
 
+    # 문제 유형에 따라 프롬프트와 응답 형식만 바꾼다.
+    if quiz_type == "choice":
+        prompt, schema = prompts.GENERATE_CHOICE_QUIZ, ChoiceResult
+    else:
+        prompt, schema = prompts.GENERATE_QUIZ, QuizResult
+
     try:
         res = _generate_with_retry(
             model=QUIZ_MODEL,
             contents=contents,
             config=types.GenerateContentConfig(
-                system_instruction=prompts.GENERATE_QUIZ,
+                system_instruction=prompt,
                 response_mime_type="application/json",
-                response_schema=QuizResult,
+                response_schema=schema,
             ),
         )
-        result = _parse(res, QuizResult)
+        result = _parse(res, schema)
     except Exception as e:
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e}"), 500
 
     # 시험지는 한 문제만 낸다. Gemini 가 여러 개를 줘도 첫 번째만 쓴다.
-    return jsonify(ok=True, items=[item.model_dump() for item in result.items[:1]])
+    items = []
+    for item in result.items[:1]:
+        if quiz_type == "choice":
+            choices = [c.strip() for c in item.choices if c and c.strip()]
+            # 보기가 2개 미만이거나 정답 번호가 범위를 벗어나면 쓸 수 없는 문제다.
+            if len(choices) < 2 or not 0 <= item.answer_index < len(choices):
+                continue
+            items.append(
+                {
+                    "type": "choice",
+                    "question": item.question,
+                    "choices": choices,
+                    "answers": [choices[item.answer_index]],
+                }
+            )
+        else:
+            items.append({"type": "blank", **item.model_dump()})
+
+    return jsonify(ok=True, items=items)
 
 
 if __name__ == "__main__":

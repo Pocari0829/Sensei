@@ -648,6 +648,59 @@ body {
 .q-card textarea:focus {
   border-color: var(--primary);
 }
+
+/* 객관식 보기 — 카드 전체가 눌리는 라디오 버튼 */
+.q-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.q-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.q-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.q-choice__num {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-fg);
+  border-radius: 999px;
+  background: var(--surface-tint);
+}
+.q-choice:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--surface-tint);
+}
+.q-choice:has(input:checked) .q-choice__num {
+  color: var(--primary-fg);
+  background: var(--primary);
+}
+.q-choice:has(input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .quiz-footer {
   display: flex;
   flex-shrink: 0;

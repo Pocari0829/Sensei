@@ -87,8 +87,9 @@ export function checkSystem(message, history = []) {
  *
  * @param {{role: "user"|"sensei", text: string}[]} history - 대화 전체.
  * @param {string[]} previous - 이미 낸 문제의 지문들. 보내면 이것과 겹치지 않는 새 문제를 만든다.
- * @returns {Promise<{ok: true, items: {question: string, answers: string[]}[]} | {ok: false, error: string}>}
+ * @param {"blank"|"choice"} type - 문제 유형. "blank" = 빈칸(직접 입력), "choice" = 객관식(보기 4개).
+ * @returns {Promise<{ok: true, items: {type: "blank"|"choice", question: string, answers: string[], choices?: string[]}[]} | {ok: false, error: string}>}
  */
-export function generateQuiz(history = [], previous = []) {
-  return postJson("/generate-quiz", { history, previous });
+export function generateQuiz(history = [], previous = [], type = "blank") {
+  return postJson("/generate-quiz", { history, previous, type });
 }

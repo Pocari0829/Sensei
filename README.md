@@ -1,26 +1,36 @@
-# Figma To Code Studio
+# Sensei — 실행 방법
 
-이거 피그마로 만든 화면 6개야. 이거 HTML, CSS로 만들려고 하는데 기본적인 틀은 너가 만들어 주고 내가 이미지 줄게 그거 잘 넣을 수 있게 해줘
+## 1. 준비 (처음 한 번만)
 
-This project was built with [Lovable](https://lovable.dev).
+```powershell
+py -3.12 -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+```
 
-**Live app**: https://figma-to-web-joy.lovable.app
+## 2. 실행
 
-## Build with Lovable
+터미널 **2개**가 필요합니다.
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/ffdb0217-73f9-4a5a-98c3-1729e229c543).
+**터미널 1 — 백엔드**
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+```powershell
+.\venv\Scripts\Activate.ps1
+python -m backend.app
+```
 
-## Development
+**터미널 2 — 프론트** (프로젝트 폴더에서, `cd frontend` 하지 않습니다)
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+```powershell
+.\venv\Scripts\Activate.ps1
+python serve_frontend.py
+```
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+> `python -m http.server 8000` 으로도 열리지만, 그러면 브라우저가 예전 js 파일을 계속 써서
+> 코드를 고쳐도 화면이 안 바뀝니다 (매번 Ctrl+Shift+R 필요). `serve_frontend.py` 는 항상 최신 파일을 줍니다.
+
+**브라우저**
+
+```
+http://localhost:8000/src/pages/chat.html
 ```

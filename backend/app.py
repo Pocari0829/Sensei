@@ -15,7 +15,9 @@
 
 import json
 import os
+import re
 import time
+from typing import Literal
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -46,8 +48,11 @@ HAKU_MODEL = os.getenv("HAKU_MODEL", "gemini-3-flash-preview")
 CHECK_MODEL = os.getenv("CHECK_MODEL", "gemini-3-flash-preview")
 # 문제 생성 전용 모델. .env 에 QUIZ_MODEL 이 없으면 CHECK_MODEL 을 같이 쓴다.
 QUIZ_MODEL = os.getenv("QUIZ_MODEL", CHECK_MODEL)
+# 문제 유형(빈칸 주관식 / 객관식) 고르기 전용 모델. 문제를 만드는 QUIZ_MODEL 보다 먼저 한 번 부른다.
+QUIZ_TYPE_MODEL = os.getenv("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
 # 정리:  HAKU_MODEL = 하쿠 꼬리질문 / CHECK_MODEL = 정오 판별 / QUIZ_MODEL = 문제 생성
-# 무료 사용량은 모델마다 따로 계산되므로, 셋을 다른 모델로 두면 하루에 더 많이 쓸 수 있다.
+#        QUIZ_TYPE_MODEL = 문제 유형 고르기
+# 무료 사용량은 모델마다 따로 계산되므로, 서로 다른 모델로 두면 하루에 더 많이 쓸 수 있다.
 
 
 # ─────────────────────────────────────────────
@@ -72,7 +77,7 @@ class QuizItem(BaseModel):
     question: str = Field(
         description="빈칸에 들어갈 말은? 뒤에 문장이 오는 형식. 빈칸은 (    ) 로 표시한다."
     )
-    answers: list[str] = Field(description="빈칸의 정답들. 문장 속 빈칸 순서대로.")
+    answers: list[str] = Field(description="빈칸의 정답들. 문장 속 빈칸 순서대로, 빈칸 수만큼.")
 
 
 # 시험지 (문제 목록)
@@ -90,6 +95,16 @@ class ChoiceItem(BaseModel):
 # 객관식 시험지 (문제 목록)
 class ChoiceResult(BaseModel):
     items: list[ChoiceItem] = Field(description="문제는 딱 1개만 담는다.")
+
+
+# 문제 유형 고르기 결과 (generate_quiz 가 문제를 만들기 전에 QUIZ_TYPE_MODEL 에게 받는다)
+# Gemini 는 칸을 적힌 순서대로 채우므로, 이유(reason)를 먼저 쓰게 해서 내용을 따져 본 뒤에 유형을 고르게 한다.
+class QuizTypeResult(BaseModel):
+    reason: str = Field(description="이 유형을 고른 이유. 대화 내용을 근거로 짧은 한 문장.")
+    type: Literal["blank", "choice"] = Field(
+        description="다음 문제의 유형. blank = 빈칸 주관식 (빈칸에 들어갈 말을 직접 쓴다), "
+        "choice = 객관식 (보기 중 정답 하나를 고른다)."
+    )
 
 
 # ─────────────────────────────────────────────
@@ -130,17 +145,18 @@ def _parse(res, schema):
     return schema.model_validate(json.loads(res.text))
 
 
-def _generate_with_retry(**kwargs):
-    """Gemini 가 잠깐 혼잡(503 UNAVAILABLE)하면 조금 기다렸다가 최대 3번까지 다시 시도한다.
+def _generate_with_retry(attempts=3, **kwargs):
+    """Gemini 가 잠깐 혼잡(503 UNAVAILABLE)하면 조금 기다렸다가 다시 시도한다. (기본 최대 3번)
 
     정오 판별과 문제 생성이 쓴다. (하쿠 쪽 ask_haku 는 재시도 없이 한 번만 부른다)
+    문제 유형 고르기는 실패해도 대신 정할 수 있어서 attempts 를 줄여 오래 기다리지 않는다.
     """
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             return client.models.generate_content(**kwargs)
         except Exception as e:
             busy = "503" in str(e) or "UNAVAILABLE" in str(e)
-            if not busy or attempt == 2:
+            if not busy or attempt == attempts - 1:
                 raise
             # 첫 실패 뒤 2초, 두 번째 실패 뒤 4초를 기다린다.
             time.sleep(2 * (attempt + 1))
@@ -344,17 +360,106 @@ def check_system():
     return jsonify(ok=True, is_correct=result.is_correct, feedback=result.feedback)
 
 
+# 문제 검사: Gemini 가 만든 문제가 시험지에 저장해도 되는 모양인지 확인하고, 프론트가 쓰는 모양으로 바꾼다.
+# 쓸 수 없는 문제면 ValueError 를 낸다. 깨진 문제가 DB 에 한 번 저장되면 시험지에 계속 남기 때문이다.
+# 빈칸 표시는 괄호 안이 공백뿐인 것: (    ), ( ), 전각 （  ） 등. "print()" 처럼 아예 빈 괄호는 빈칸이 아니다.
+BLANK_PATTERN = re.compile(r"[(（]\s+[)）]")
+# Gemini 가 혼잡할 때 한글을 조합용 자모(U+1100~U+11FF)로 쪼개서 뜻이 깨진 글을 낸 적이 있다.
+# 보통 글에는 나오지 않는 글자라서, 이것이 섞여 있으면 깨진 문제로 본다. ("ㄱ", "ㅏ" 같은 보통 자모는 괜찮다)
+BROKEN_HANGUL_PATTERN = re.compile(r"[\u1100-\u11ff]")
+
+
+def _blank_item(question, answers):
+    """빈칸 문제 → {type: "blank", question, answers}. 빈칸이 없거나 정답 수가 빈칸 수와 다르면 ValueError."""
+    question = question.strip()
+    answers = [a.strip() for a in answers if a.strip()]
+    blanks = len(BLANK_PATTERN.findall(question))
+    if blanks == 0:
+        raise ValueError("빈칸 (    ) 이 없는 빈칸 문제가 나왔어요.")
+    if len(answers) != blanks:
+        raise ValueError(f"빈칸은 {blanks}개인데 정답은 {len(answers)}개인 문제가 나왔어요.")
+    return {"type": "blank", "question": question, "answers": answers}
+
+
+def _choice_item(question, choices, answer_index):
+    """객관식 문제 → {type: "choice", question, choices, answers: [정답 보기의 글]}.
+
+    지문이 비었거나, 정답 번호가 올바르지 않거나, 보기가 2개 미만이면 ValueError.
+    """
+    question = question.strip()
+    choices = [c.strip() for c in choices]
+    if not question:
+        raise ValueError("지문이 비어 있는 객관식 문제가 나왔어요.")
+    if not 0 <= answer_index < len(choices) or not choices[answer_index]:
+        raise ValueError("정답 번호가 올바르지 않은 객관식 문제가 나왔어요.")
+    answer = choices[answer_index]
+    # 빈 보기와 겹치는 보기는 뺀다. 정답 글은 위에서 먼저 꺼내 두었으므로 번호가 밀려도 정답은 그대로다.
+    choices = list(dict.fromkeys(c for c in choices if c))
+    if len(choices) < 2:
+        raise ValueError("보기가 2개도 안 되는 객관식 문제가 나왔어요.")
+    return {"type": "choice", "question": question, "choices": choices, "answers": [answer]}
+
+
+def _fallback_quiz_type(previous):
+    """유형 고르기가 실패했을 때 쓸 유형: 이미 낸 문제 중 더 적게 나온 유형. (같으면 객관식)
+
+    이미 낸 문제의 유형은 지문으로 안다. 빈칸 표시 (    ) 가 있으면 빈칸 주관식, 없으면 객관식.
+    """
+    blanks = sum(1 for q in previous if BLANK_PATTERN.search(q))
+    return "blank" if blanks < len(previous) - blanks else "choice"
+
+
+def _choose_quiz_type(history, previous):
+    """다음 문제를 빈칸 주관식(blank) / 객관식(choice) 중 어느 유형으로 낼지 QUIZ_TYPE_MODEL 에게 고르게 한다.
+
+    문제를 만드는 호출과 나눈 이유: 유형 고르기 프롬프트(CHOOSE_QUIZ_TYPE)와 문제 프롬프트를 따로 다듬으려고.
+    고르기에 실패해도(혼잡, 사용량 초과 등) 퀴즈가 막히지 않게, 이미 낸 문제 중 더 적게 나온 유형으로 정한다.
+    """
+    contents = _history_to_contents(history)
+    request_text = "지금까지 대화로 다음 시험 문제의 유형을 골라줘."
+    if previous:
+        request_text += "\n아래는 이미 낸 문제야. ([ ] 안은 그 문제의 유형)\n" + "\n".join(
+            f"- [{'빈칸 주관식' if BLANK_PATTERN.search(q) else '객관식'}] {q}" for q in previous
+        )
+    contents.append(types.Content(role="user", parts=[types.Part(text=request_text)]))
+
+    try:
+        res = _generate_with_retry(
+            attempts=2,
+            model=QUIZ_TYPE_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=prompts.CHOOSE_QUIZ_TYPE,  # prompts.py 의 유형 고르기 프롬프트
+                response_mime_type="application/json",
+                response_schema=QuizTypeResult,
+            ),
+        )
+        result = _parse(res, QuizTypeResult)
+    except Exception as e:
+        fallback = _fallback_quiz_type(previous)
+        app.logger.warning("문제 유형을 고르지 못해서 %s 로 정함: %s", fallback, e)
+        return fallback
+
+    app.logger.info("문제 유형: %s (%s)", result.type, result.reason)
+    return result.type
+
+
 @app.post("/generate-quiz")
 def generate_quiz():
-    """지금까지의 대화로 시험지(빈칸 문제)를 만든다. [퀴즈 풀기] 를 눌렀을 때 호출된다.
+    """지금까지의 대화로 시험지 문제를 하나 만든다. [퀴즈 풀기] 를 눌렀을 때 호출된다.
 
-    받는 것:     {history, previous?, type?}  (previous = 이미 낸 문제의 지문들, type = "blank" | "choice")
-    돌려주는 것: {ok: true, items: [{type, question: "...", answers: ["...", ...], choices?: [...]}]}  (문제는 항상 1개)
-        type 이 "choice"(객관식)면 choices 에 보기 4개가 오고, answers 에는 정답 보기 1개만 담긴다.
+    받는 것:     {history, previous?, type?}  (previous = 이미 낸 문제의 지문들)
+        type 을 안 보내면(지금의 quiz.js) 두 단계로 만든다.
+          ① _choose_quiz_type(): QUIZ_TYPE_MODEL 이 대화 내용을 보고 빈칸 주관식 / 객관식 중 더 맞는 유형을 고른다.
+          ② QUIZ_MODEL 이 고른 유형의 프롬프트(GENERATE_QUIZ / GENERATE_CHOICE_QUIZ)로 문제를 만든다.
+        type 에 "blank" | "choice" 를 보내면 ① 없이 그 유형으로만 만든다. (예전 방식. 옛 화면이 보내도 동작하게 남겨 둔다)
+    돌려주는 것: {ok: true, items: [{type, question: "...", answers: ["...", ...], choices?: [...]}]}  (문제는 최대 1개)
+        type 이 "choice"(객관식)면 choices 에 보기들이 오고, answers 에는 정답 보기 1개만 담긴다.
+        대화에 문제로 낼 내용이 없으면 items 가 빈 목록이고, Gemini 가 깨진 문제를 주면 ok: false 다.
     """
     data = request.get_json(silent=True) or {}
-    contents = _history_to_contents(data.get("history", []))
-    quiz_type = "choice" if data.get("type") == "choice" else "blank"
+    history = data.get("history", [])
+    contents = _history_to_contents(history)
 
     if not contents:
         return jsonify(ok=False, error="대화 기록이 없어서 문제를 만들 수 없어요."), 400
@@ -366,6 +471,11 @@ def generate_quiz():
         previous = []
     previous = [q.strip() for q in previous if isinstance(q, str) and q.strip()]
 
+    # ① 유형: 정해서 보냈으면 그대로, 안 보냈으면(이상한 값 포함) Gemini 에게 먼저 고르게 한다.
+    quiz_type = data.get("type")
+    if quiz_type not in ("blank", "choice"):
+        quiz_type = _choose_quiz_type(history, previous)
+
     # 대화가 하쿠(model) 의 말로 끝나면 Gemini 가 "무엇을 하라는 건지" 모르므로
     # 마지막에 사용자 요청 한 줄을 붙인다.
     request_text = "지금까지 대화로 시험지를 만들어줘."
@@ -376,7 +486,7 @@ def generate_quiz():
         )
     contents.append(types.Content(role="user", parts=[types.Part(text=request_text)]))
 
-    # 문제 유형에 따라 프롬프트와 응답 형식만 바꾼다.
+    # ② 고른 유형의 프롬프트와 응답 형식으로 문제를 만든다.
     if quiz_type == "choice":
         prompt, schema = prompts.GENERATE_CHOICE_QUIZ, ChoiceResult
     else:
@@ -397,26 +507,25 @@ def generate_quiz():
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e}"), 500
 
     # 시험지는 한 문제만 낸다. Gemini 가 여러 개를 줘도 첫 번째만 쓴다.
-    items = []
-    for item in result.items[:1]:
+    # 대화에 문제로 낼 내용이 없어서 빈 목록이 오면 그대로 돌려준다. (quiz.js 가 안내 문구를 띄운다)
+    if not result.items:
+        return jsonify(ok=True, items=[])
+    item = result.items[0]
+
+    try:
         if quiz_type == "choice":
-            choices = [c.strip() for c in item.choices if c and c.strip()]
-            # 보기가 2개 미만이거나 정답 번호가 범위를 벗어나면 쓸 수 없는 문제다.
-            if len(choices) < 2 or not 0 <= item.answer_index < len(choices):
-                continue
-            items.append(
-                {
-                    "type": "choice",
-                    "question": item.question,
-                    "choices": choices,
-                    "answers": [choices[item.answer_index]],
-                }
-            )
+            quiz_item = _choice_item(item.question, item.choices, item.answer_index)
         else:
-            items.append({"type": "blank", **item.model_dump()})
+            quiz_item = _blank_item(item.question, item.answers)
+        texts = [quiz_item["question"], *quiz_item["answers"], *quiz_item.get("choices", [])]
+        if any(BROKEN_HANGUL_PATTERN.search(text) for text in texts):
+            raise ValueError("글자가 깨진 문제가 나왔어요.")
+    except ValueError as e:
+        # 실패로 돌려보내면 quiz.js 가 저장하지 않으므로, 다음에 퀴즈 화면을 열 때 다시 만든다.
+        app.logger.warning("쓸 수 없는 문제라서 버림: %s %r", e, item)
+        return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e} 새로고침하면 다시 만들어요."), 500
 
-    return jsonify(ok=True, items=items)
-
+    return jsonify(ok=True, items=[quiz_item])
 
 if __name__ == "__main__":
     # debug=True 면 파일 저장 시 서버가 자동 재시작된다. 개발 중에만 켤 것.

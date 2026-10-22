@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // history.html 전용 스크립트.
 // 예전에는 세션 카드 2~3개가 html에 그대로 박혀 있었다.
-// 이제는 store.js(localStorage)에 실제로 쌓인 학습 세션을 읽어서 그린다.
+// 이제는 DB 에 쌓인 내 학습 세션을 store.js 로 읽어서 그린다.
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
@@ -52,17 +52,31 @@ function emptyState() {
     </div>`;
 }
 
-function render() {
-  const sessions = store.getAllSessions().filter((s) => s.messages.length > 0);
+function errorState(message) {
+  return `
+    <div class="card empty-illustration">
+      <img src="../../public/mascot.png" alt="" />
+      <p class="empty-illustration__title">학습 기록을 불러오지 못했어요</p>
+      <p class="empty-illustration__text">${escapeHtml(message)}<br />잠시 후 새로고침해 주세요.</p>
+    </div>`;
+}
+
+async function render() {
+  let sessions;
+  try {
+    sessions = await store.getAllSessions();
+  } catch (err) {
+    listEl.innerHTML = errorState(err.message);
+    return;
+  }
 
   if (sessions.length === 0) {
     listEl.innerHTML = emptyState();
     return;
   }
 
-  const activeId = store.getActiveSessionId();
-  const current = sessions.find((s) => s.id === activeId);
-  const others = sessions.filter((s) => s.id !== activeId);
+  // "지금 진행 중" = 하단 채팅 탭을 누르면 이어서 열리는 세션(가장 최근에 대화한 세션)
+  const [current, ...others] = sessions;
 
   let html = "";
 
@@ -85,11 +99,11 @@ function render() {
   listEl.innerHTML = html;
 }
 
-// "새 세션" 버튼: 빈 세션을 만들어두고 채팅 화면으로 넘어간다.
+// "새 세션" 버튼: 채팅 화면을 빈 화면(?new)으로 연다.
+// 세션은 첫 메시지를 보낼 때 DB 에 만들어진다. (빈 세션이 쌓이지 않게)
 newSessionBtn.addEventListener("click", (e) => {
   e.preventDefault();
-  const session = store.createSession();
-  window.location.href = `./chat.html?session=${encodeURIComponent(session.id)}`;
+  window.location.href = "./chat.html?new";
 });
 
 document.addEventListener("DOMContentLoaded", render);

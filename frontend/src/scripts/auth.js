@@ -21,6 +21,13 @@ export async function getCurrentUser() {
   return data.session?.user ?? null;
 }
 
+/** 지금 로그인한 사용자. 로그인 안 했으면 오류를 던진다. (DB 에 읽고 쓸 때 쓴다) */
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("로그인되어 있지 않아요.");
+  return user;
+}
+
 /**
  * Google 이 준 ID 토큰으로 Supabase 에 로그인한다.
  * @param {string} idToken - Google 로그인 버튼이나 One Tap 이 콜백으로 넘겨준 credential.

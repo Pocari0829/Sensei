@@ -68,6 +68,32 @@ body {
   }
 }
 
+/* 채팅 화면: 폰 셸을 화면(뷰포트) 높이에 맞춰서 말풍선 목록(#message-list)만 스크롤되게 한다.
+   공통 .phone 은 min-height 만 있어서 말풍선이 쌓이면 셸이 같이 길어지고 페이지 전체가 스크롤됐다.
+   (그래서 헤더는 위로, 빠른 버튼·입력창·하단 탭은 아래로 밀려나 같이 안 보였다)
+   학습 기록 / 프로필 / 퀴즈는 지금처럼 내용만큼 늘어나는 게 맞아서 채팅 화면에만 건다.
+   100dvh = 모바일 브라우저의 주소창/툴바를 뺀, 실제로 보이는 높이. dvh 를 모르는 브라우저는 바로 위의 100vh 를 쓴다. */
+body[data-page="chat"] {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+/* 셸 높이는 body 높이(= 화면 높이, 데스크톱은 위아래 여백 32px 씩을 뺀 높이)를 그대로 따라간다 (flex 의 stretch).
+   공통 규칙의 min-height(100vh / 데스크톱 844px)가 남아 있으면 화면보다 길어지므로 없앤다. */
+body[data-page="chat"] .phone {
+  min-height: 0;
+}
+/* 말풍선들의 높이를 셸 높이 계산에서 뺀다 (size containment).
+   그러면 목록은 셸을 늘리지 않고 남는 자리만 채우고(.scroll 의 flex: 1), 넘치는 말풍선은 목록 안에서 스크롤된다.
+   빈 화면(인사말 + 마스코트)처럼 줄어들 수 없는 내용은 그대로 셸 높이에 들어가므로, 화면이 그보다 낮으면
+   예전처럼 셸이 늘어나고 페이지가 스크롤된다. (셸이 잘려서 입력창·하단 탭이 사라지는 일은 없다)
+   스크롤바: 휴대폰은 스크롤할 때만 얇게 떴다 사라지지만, 데스크톱(Windows)은 회색 기본 스크롤바가
+   폰 화면 안에 그대로 보여서 얇은 연보라색으로 바꾼다. */
+body[data-page="chat"] #message-list {
+  contain: size;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 70, 200, 0.25) transparent;
+}
+
 /* 상태바 */
 .statusbar {
   display: flex;

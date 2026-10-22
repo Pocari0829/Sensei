@@ -4,11 +4,12 @@
 // 세 개의 "정적" 페이지를 하드코딩된 말풍선과 함께 오가는 구조였다.
 // 지금은 이 페이지 하나에서, 실제로 보낸 메시지에 맞춰 말풍선을 그때그때 그리고
 // 백엔드(/ask-haku)를 호출해 하쿠의 대답을 실시간으로 붙인다.
+// 대화는 store.js 를 통해 DB(sessions)에 저장한다.
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
 import { askHaku } from "./api.js";
-import { NICKNAME_MAX, getNickname, saveNickname } from "./user.js";
+import { NICKNAME_MAX, getNickname, lowerLevel, saveNickname } from "./user.js";
 
 const phoneEl = document.querySelector(".phone");
 const dragHint = document.getElementById("drag-hint");
@@ -82,6 +83,19 @@ function systemAlert(text) {
     </div>`;
 }
 
+/** 말풍선 목록 맨 아래에 "시스템 알림" 을 붙인다. 아직 대화가 없는 빈 화면이어도 보이게 한다. */
+function showAlert(text) {
+  emptyState.hidden = true;
+  messageList.hidden = false;
+  messageList.insertAdjacentHTML("beforeend", systemAlert(text));
+  messageList.scrollTop = messageList.scrollHeight;
+}
+
+/** 지금 보는 세션을 주소(?session=)에 남긴다. 새로고침하거나 퀴즈에서 돌아와도 같은 세션이 열린다. */
+function showSessionInUrl(id) {
+  window.history.replaceState(null, "", `?session=${encodeURIComponent(id)}`);
+}
+
 /** 현재 세션 상태(activeSession)에 맞춰 화면 전체를 다시 그린다. */
 function render() {
   const sessionMessages = activeSession?.messages ?? [];
@@ -146,10 +160,12 @@ function typeLastSenseiBubble() {
 
   let i = 0;
   typingTimer = setInterval(() => {
+    // 글자가 늘어나 말풍선이 길어지므로 따라 내려간다.
+    // 단, 맨 아래를 보고 있을 때만. 위로 올려 이전 대화를 보는 중이면 끌어내리지 않는다.
+    const nearBottom = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 40;
     el.textContent += chars[i];
     i += 1;
-    // 글자가 늘어나 말풍선이 길어지므로 계속 따라 내려간다.
-    messageList.scrollTop = messageList.scrollHeight;
+    if (nearBottom) messageList.scrollTop = messageList.scrollHeight;
 
     if (i >= chars.length) {
       clearInterval(typingTimer);
@@ -170,21 +186,44 @@ async function sendMessage(rawText) {
     return;
   }
 
+  setSending(true);
+  composerInput.value = "";
+
+  // 저장에 실패하면 보낸 말을 입력칸에 되돌려 놓고 멈춘다.
+  const stopWithAlert = (message) => {
+    composerInput.value = text;
+    showAlert(message);
+    setSending(false);
+    composerInput.focus();
+  };
+
+  // 첫 메시지면 이때 DB 에 세션을 만든다.
   if (!activeSession) {
-    activeSession = store.createSession();
-    store.setActiveSessionId(activeSession.id);
+    try {
+      activeSession = await store.createSession();
+    } catch (err) {
+      stopWithAlert(`대화를 시작하지 못했어요. 다시 보내주세요. (${err.message})`);
+      return;
+    }
+    showSessionInUrl(activeSession.id);
   }
 
+  // 하쿠의 대답을 기다리는 사이에 "새 주제" 를 눌러도, 대답은 원래 세션에 붙도록 붙잡아 둔다.
+  const session = activeSession;
+
   // 하쿠에게는 "이번 메시지 이전까지"의 대화만 history로 넘긴다.
-  const historyBeforeThisTurn = activeSession.messages.map((m) => ({
+  const historyBeforeThisTurn = session.messages.map((m) => ({
     role: m.role,
     text: m.text,
   }));
 
-  setSending(true);
-  composerInput.value = "";
-
-  store.addMessage(activeSession, "user", text);
+  try {
+    await store.addMessage(session, "user", text);
+  } catch (err) {
+    session.messages.pop();
+    stopWithAlert(`메시지를 저장하지 못했어요. 다시 보내주세요. (${err.message})`);
+    return;
+  }
   render();
 
   messageList.insertAdjacentHTML("beforeend", typingRow());
@@ -195,19 +234,47 @@ async function sendMessage(rawText) {
   document.getElementById("typing-row")?.remove();
 
   if (result.ok) {
-    store.addMessage(activeSession, "sensei", result.question);
-    render();
-    typeLastSenseiBubble();
+    let saveError = null;
+    try {
+      await store.addMessage(session, "sensei", result.question);
+    } catch (err) {
+      saveError = err;
+    }
+
+    if (session === activeSession) {
+      render();
+      typeLastSenseiBubble();
+      if (saveError) {
+        showAlert(`하쿠의 대답을 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${saveError.message})`);
+      }
+    }
+
+    // 정오 판별에서 틀렸으면 기록해 둔다. (화면에는 영향 없음)
+    if (result.is_correct === false) {
+      recordWrongAnswer(session, text, result.feedback);
+    }
   } else {
-    messageList.insertAdjacentHTML(
-      "beforeend",
-      systemAlert(result.error || "답변을 가져오지 못했어요. 다시 시도해주세요."),
-    );
-    messageList.scrollTop = messageList.scrollHeight;
+    showAlert(result.error || "답변을 가져오지 못했어요. 다시 시도해주세요.");
   }
 
   setSending(false);
   composerInput.focus();
+}
+
+/**
+ * 정오 판별에서 틀렸을 때: 틀린 설명과 피드백(system_corrections),
+ * 모르는 개념(gap_records, 개념 이름 = 세션 주제)을 기록한다. 실패해도 대화는 계속한다.
+ */
+function recordWrongAnswer(session, text, feedback) {
+  store
+    .addCorrection(session.id, text, feedback)
+    .catch((err) => console.warn("틀린 설명을 저장하지 못했어요:", err));
+
+  if (session.topic) {
+    store
+      .recordGap(session.topic, "wrong")
+      .catch((err) => console.warn("모르는 개념을 저장하지 못했어요:", err));
+  }
 }
 
 composerForm.addEventListener("submit", (e) => {
@@ -216,8 +283,11 @@ composerForm.addEventListener("submit", (e) => {
 });
 
 newTopicBtn.addEventListener("click", () => {
-  activeSession = store.createSession();
+  // 새 세션은 첫 메시지를 보낼 때 DB 에 만든다. 그 전까지는 빈 화면이다.
+  activeSession = null;
   introMessages = [];
+  // 새로고침해도 빈 화면이 유지되게 주소에 표시한다. (?new 가 없으면 최근 세션이 열린다)
+  window.history.replaceState(null, "", "?new");
   render();
   composerInput.focus();
 });
@@ -246,8 +316,10 @@ function saveTopic() {
   if (activeSession) {
     const value = topicInput.value.trim();
     activeSession.topic = value || activeSession.topic || "학습 중";
-    store.saveSession(activeSession);
     topicNameEl.textContent = activeSession.topic;
+    store
+      .saveSession(activeSession)
+      .catch((err) => showAlert(`주제 이름을 저장하지 못했어요. (${err.message})`));
   }
   exitTopicEdit();
 }
@@ -264,13 +336,26 @@ topicInput.addEventListener("keydown", (e) => {
   }
 });
 
-easierBtn.addEventListener("click", () => sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?"));
+easierBtn.addEventListener("click", () => {
+  if (isSending) return;
+  // "더 쉽게" 를 눌렀다 = 이 주제를 어려워한다. 모르는 개념(개념 이름 = 세션 주제)에 기록한다.
+  if (activeSession?.topic) {
+    store
+      .recordGap(activeSession.topic, "easy")
+      .catch((err) => console.warn("모르는 개념을 저장하지 못했어요:", err));
+  }
+  // 내 수준(users.level_current)도 한 단계 내린다. 저장을 기다리지 않고 바로 하쿠에게 보낸다.
+  lowerLevel().catch((err) => console.warn("수준을 낮추지 못했어요:", err));
+  sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?");
+});
 dontKnowBtn.addEventListener("click", () => sendMessage("음... 모르겠어. 힌트를 줄 수 있어?"));
 
 quizBtn.addEventListener("click", () => {
-  const topic = activeSession?.topic ?? "";
-  const query = topic ? `?topic=${encodeURIComponent(topic)}` : "";
-  window.location.href = `./quiz.html${query}`;
+  if (!activeSession) return;
+  // 퀴즈 화면이 어느 세션으로 문제를 낼지 알 수 있게 세션 id 를 같이 넘긴다.
+  const params = new URLSearchParams({ session: activeSession.id });
+  if (activeSession.topic) params.set("topic", activeSession.topic);
+  window.location.href = `./quiz.html?${params}`;
 });
 
 // ─────────────────────────────────────────────
@@ -322,11 +407,7 @@ async function submitNickname(name) {
   try {
     await saveNickname(name);
   } catch (err) {
-    messageList.insertAdjacentHTML(
-      "beforeend",
-      systemAlert(`닉네임을 저장하지 못했어요. 다시 입력해주세요. (${err.message})`),
-    );
-    messageList.scrollTop = messageList.scrollHeight;
+    showAlert(`닉네임을 저장하지 못했어요. 다시 입력해주세요. (${err.message})`);
     setSending(false);
     return;
   }
@@ -340,17 +421,12 @@ async function submitNickname(name) {
 }
 
 async function loadNickname() {
-  // 불러오는 동안 잠깐 입력을 막는다. (그 사이에 보낸 말이 닉네임 대신 하쿠에게 가지 않게)
-  setSending(true);
   try {
     nickname = await getNickname();
   } catch (err) {
     // 못 불러와도 채팅은 할 수 있어야 하므로, 첫 인사 없이 그냥 진행한다.
     console.warn("닉네임을 불러오지 못했어요:", err);
     return;
-  } finally {
-    setSending(false);
-    composerInput.focus();
   }
 
   if (nickname) {
@@ -360,27 +436,41 @@ async function loadNickname() {
   }
 }
 
-function init() {
+/**
+ * 어떤 세션을 열지 정한다.
+ *   ?session=<id>  학습 기록에서 눌렀거나, 보던 세션에서 새로고침한 경우 → 그 세션
+ *   ?new           "새 주제" 를 누른 경우 → 빈 화면 (첫 메시지를 보낼 때 세션을 만든다)
+ *   아무것도 없음   하단 탭으로 들어온 경우 → 가장 최근에 대화한 세션
+ */
+async function loadSession() {
   const params = new URLSearchParams(window.location.search);
-  const requestedId = params.get("session");
+  if (params.has("new")) return;
 
-  // 1) 학습 기록에서 특정 세션을 눌러 들어온 경우
-  if (requestedId) {
-    activeSession = store.getSession(requestedId);
+  try {
+    const requestedId = params.get("session");
+    activeSession = requestedId ? await store.getSession(requestedId) : await store.getLatestSession();
+  } catch (err) {
+    showAlert(`대화를 불러오지 못했어요. 새로고침해 주세요. (${err.message})`);
+    return;
   }
 
-  // 2) 그게 아니면, 마지막으로 보던 진행 중 세션을 이어서 연다.
-  if (!activeSession) {
-    const activeId = store.getActiveSessionId();
-    activeSession = activeId ? store.getSession(activeId) : null;
-  }
-
-  if (activeSession) {
-    store.setActiveSessionId(activeSession.id);
-  }
-
+  if (activeSession) showSessionInUrl(activeSession.id);
   render();
-  loadNickname();
+}
+
+async function init() {
+  render();
+
+  // 불러오는 동안 입력을 막는다. (그 사이에 보낸 말이 닉네임 대신 하쿠에게 가지 않게)
+  setSending(true);
+  try {
+    await loadNickname();
+    // 닉네임을 묻는 중이면(첫 인사) 빈 화면에서 시작하므로 세션은 불러오지 않는다.
+    if (!askingNickname) await loadSession();
+  } finally {
+    setSending(false);
+    composerInput.focus();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);

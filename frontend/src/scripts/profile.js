@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // profile.html 전용 스크립트.
 // 닉네임은 DB(users.nickname)에 있다. 첫 채팅에서 하쿠가 물어보고 정한 값을 여기서 고칠 수 있다.
-// 학습 통계는 아직 store.js(localStorage)가 가진 세션 기록에서 계산한다.
+// 학습 통계는 DB 에 쌓인 내 세션 기록(store.js)에서 계산한다.
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
@@ -28,11 +28,15 @@ function renderNickname() {
   nicknameInput.value = profile.nickname || "";
 }
 
-function renderStats() {
-  const stats = store.getStats();
-  statSessions.textContent = `${stats.totalSessions}개`;
-  statMessages.textContent = `${stats.totalMessages}개`;
-  statTopic.textContent = stats.lastTopic || "아직 없음";
+async function renderStats() {
+  try {
+    const stats = await store.getStats();
+    statSessions.textContent = `${stats.totalSessions}개`;
+    statMessages.textContent = `${stats.totalMessages}개`;
+    statTopic.textContent = stats.lastTopic || "아직 없음";
+  } catch (err) {
+    console.warn("학습 통계를 불러오지 못했어요:", err);
+  }
 }
 
 function enterEditMode() {

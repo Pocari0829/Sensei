@@ -84,13 +84,15 @@ export function checkSystem(message, history = []) {
 }
 
 /**
- * 지금까지의 대화로 시험지를 만든다.
+ * 지금까지의 대화로 시험지 문제를 하나 만든다.
+ * 문제 유형은 정해서 보내지 않는다. 백엔드의 Gemini 가 대화 내용을 보고
+ * "blank"(빈칸 주관식, 직접 입력) / "choice"(객관식, 보기 4개) 중 더 맞는 쪽을 골라서 만든다.
  *
  * @param {{role: "user"|"sensei", text: string}[]} history - 대화 전체.
  * @param {string[]} previous - 이미 낸 문제의 지문들. 보내면 이것과 겹치지 않는 새 문제를 만든다.
- * @param {"blank"|"choice"} type - 문제 유형. "blank" = 빈칸(직접 입력), "choice" = 객관식(보기 4개).
  * @returns {Promise<{ok: true, items: {type: "blank"|"choice", question: string, answers: string[], choices?: string[]}[]} | {ok: false, error: string}>}
+ *   items 는 보통 1개이고, 대화에 문제로 낼 내용이 없으면 빈 목록이다.
  */
-export function generateQuiz(history = [], previous = [], type = "blank") {
-  return postJson("/generate-quiz", { history, previous, type });
+export function generateQuiz(history = [], previous = []) {
+  return postJson("/generate-quiz", { history, previous });
 }

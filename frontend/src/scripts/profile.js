@@ -1,32 +1,15 @@
 // ─────────────────────────────────────────────
 // profile.html 전용 스크립트.
-// 아직 실제 로그인/DB가 없어서(로그인 버튼은 데모용 Google/Kakao 링크일 뿐),
-// 닉네임은 localStorage에 저장하고 학습 통계는 store.js가 가진 세션 기록에서 계산한다.
+// 닉네임은 DB(users.nickname)에 있다. 첫 채팅에서 하쿠가 물어보고 정한 값을 여기서 고칠 수 있다.
+// 학습 통계는 아직 store.js(localStorage)가 가진 세션 기록에서 계산한다.
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
+import { signOut } from "./auth.js";
+import { getNickname, saveNickname } from "./user.js";
 
-const PROFILE_KEY = "sensei.profile.v1";
+// 아직 닉네임을 정하지 않았을 때(첫 채팅 전) 보여줄 이름.
 const DEFAULT_NICKNAME = "게스트 학습자";
-
-function loadProfile() {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return { nickname: DEFAULT_NICKNAME };
-    const parsed = JSON.parse(raw);
-    return { nickname: (parsed && parsed.nickname) || DEFAULT_NICKNAME };
-  } catch {
-    return { nickname: DEFAULT_NICKNAME };
-  }
-}
-
-function saveProfile(profile) {
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  } catch {
-    // 저장 안 돼도 화면은 계속 동작해야 하므로 조용히 무시한다.
-  }
-}
 
 const nicknameText = document.getElementById("nickname-text");
 const nicknameEdit = document.getElementById("nickname-edit");
@@ -38,11 +21,11 @@ const statMessages = document.getElementById("stat-messages");
 const statTopic = document.getElementById("stat-topic");
 const logoutBtn = document.getElementById("logout-btn");
 
-let profile = loadProfile();
+let profile = { nickname: null };
 
 function renderNickname() {
-  nicknameText.textContent = profile.nickname;
-  nicknameInput.value = profile.nickname;
+  nicknameText.textContent = profile.nickname || DEFAULT_NICKNAME;
+  nicknameInput.value = profile.nickname || "";
 }
 
 function renderStats() {
@@ -68,12 +51,27 @@ function exitEditMode() {
 
 editBtn.addEventListener("click", enterEditMode);
 
-saveBtn.addEventListener("click", () => {
+saveBtn.addEventListener("click", async () => {
   const value = nicknameInput.value.trim();
-  profile = { ...profile, nickname: value || DEFAULT_NICKNAME };
-  saveProfile(profile);
-  renderNickname();
-  exitEditMode();
+
+  // 비워서 저장하면 바꾸지 않은 것으로 본다.
+  if (!value || value === profile.nickname) {
+    renderNickname();
+    exitEditMode();
+    return;
+  }
+
+  saveBtn.disabled = true;
+  try {
+    await saveNickname(value);
+    profile = { ...profile, nickname: value };
+    renderNickname();
+    exitEditMode();
+  } catch (err) {
+    window.alert(`닉네임을 저장하지 못했어요. 다시 시도해주세요. (${err.message})`);
+  } finally {
+    saveBtn.disabled = false;
+  }
 });
 
 nicknameInput.addEventListener("keydown", (e) => {
@@ -82,17 +80,24 @@ nicknameInput.addEventListener("keydown", (e) => {
     saveBtn.click();
   }
   if (e.key === "Escape") {
-    nicknameInput.value = profile.nickname;
+    renderNickname();
     exitEditMode();
   }
 });
 
 logoutBtn.addEventListener("click", () => {
-  // 별도 로그인 세션이 없으므로, 로그아웃은 로그인 화면으로 되돌아가는 것으로 처리한다.
-  window.location.href = "./index.html";
+  logoutBtn.disabled = true;
+  signOut();
 });
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   renderNickname();
   renderStats();
+
+  try {
+    profile = { ...profile, nickname: await getNickname() };
+    renderNickname();
+  } catch (err) {
+    console.warn("닉네임을 불러오지 못했어요:", err);
+  }
 });

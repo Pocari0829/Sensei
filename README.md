@@ -26,11 +26,15 @@ python -m backend.app
 python serve_frontend.py
 ```
 
-> `python -m http.server 8000` 으로도 열리지만, 그러면 브라우저가 예전 js 파일을 계속 써서
-> 코드를 고쳐도 화면이 안 바뀝니다 (매번 Ctrl+Shift+R 필요). `serve_frontend.py` 는 항상 최신 파일을 줍니다.
+> 반드시 `serve_frontend.py` 로 여세요. 로그인에 필요한 Supabase 주소/키(`config.js`)를
+> `.env` 에서 만들어 주고, 브라우저가 예전 js 파일을 쓰지 않게 막아줍니다.
+> `python -m http.server 8000` 으로 열면 로그인이 동작하지 않습니다.
 
-**브라우저**
+**브라우저** (로그인 화면부터 시작합니다. 로그인하지 않으면 다른 화면은 로그인 화면으로 돌아옵니다)
 
 ```
-http://localhost:8000/src/pages/chat.html
+http://localhost:8000/src/pages/index.html
 ```
+
+`127.0.0.1` 이 아니라 `localhost` 로 여세요. 로그인 상태는 주소별로 따로 저장되고,
+Google Cloud 에 등록한 주소(승인된 자바스크립트 원본)도 `localhost` 기준입니다.

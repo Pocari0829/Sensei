@@ -11,14 +11,15 @@ export const API_BASE = "http://127.0.0.1:5000";
  *
  * @param {string} message - 사용자가 방금 입력한 문장.
  * @param {{role: "user"|"sensei", text: string}[]} history - 지금까지의 대화 기록 (이번 message는 제외).
+ * @param {string|null} nickname - 하쿠가 사용자를 부를 이름. 없으면 이름 없이 대화한다.
  * @returns {Promise<{ok: true, question: string} | {ok: false, error: string}>}
  */
-export async function askHaku(message, history = []) {
+export async function askHaku(message, history = [], nickname = null) {
   try {
     const res = await fetch(`${API_BASE}/ask-haku`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message, history, nickname }),
     });
 
     // 서버가 500이어도 JSON 바디를 내려주므로 먼저 파싱을 시도한다.

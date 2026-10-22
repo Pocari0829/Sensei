@@ -237,6 +237,13 @@ def ask_haku():
     # 지금까지의 대화 기록 (선택). 프론트가 안 보내면 그냥 이번 메시지 하나로만 대화한다.
     history = data.get("history", [])
 
+    # 하쿠가 사용자를 부를 이름 (선택). 첫 채팅에서 하쿠가 물어보고 정한 닉네임이다.
+    # 프롬프트에 그대로 들어가므로 프론트의 최대 길이(16글자)를 넘는 부분은 자른다.
+    nickname = str(data.get("nickname") or "").strip()[:16]
+    system_instruction = prompts.SYSTEM_PROMPT
+    if nickname:
+        system_instruction += prompts.NICKNAME_PROMPT.format(nickname=nickname)
+
     # message 가 비어 있으면 Gemini 호출 자체가 400 으로 터진다.
     # 여기서 미리 걸러서 프론트가 읽을 수 있는 형태로 돌려준다.
     if not message or not str(message).strip():
@@ -252,11 +259,11 @@ def ask_haku():
             # contents = 매번 바뀌는 값 (지금까지의 대화 + 사용자가 방금 한 말)
             contents=contents,
             config=types.GenerateContentConfig(
-                # system_instruction = 항상 같은 값 (하쿠의 역할 지시)
+                # system_instruction = 대화 내내 같은 값 (하쿠의 역할 지시 + 사용자 호칭)
                 # 프롬프트를 contents 에 사용자 말과 같이 붙여 보내면
                 # Gemini 가 그걸 '사용자가 한 말'로 취급해 캐릭터가 무너진다.
                 # 반드시 여기로 분리해서 넣을 것.
-                system_instruction=prompts.SYSTEM_PROMPT,
+                system_instruction=system_instruction,
             ),
         )
     except Exception as e:

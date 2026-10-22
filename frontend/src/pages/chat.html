@@ -84,7 +84,7 @@
       <!-- 메시지가 하나도 없을 때: 인사말 + 마스코트 -->
       <div class="body body--center" id="empty-state">
         <div class="bubble bubble--sensei bubble--greeting">
-          안녕! 오늘은 뭘 <span class="mark">가르쳐</span> 줄 거야?
+          안녕<span id="greeting-name"></span>! 오늘은 뭘 <span class="mark">가르쳐</span> 줄 거야?
         </div>
         <div class="mascot-slot blob-stage">
           <span class="cloud cloud--1"></span>
@@ -123,6 +123,7 @@
       <div class="bottom-nav" id="bottom-nav"></div>
     </div>
 
+    <script type="module" src="../scripts/guard.js"></script>
     <script type="module" src="../scripts/nav.js"></script>
     <script type="module" src="../scripts/chat.js"></script>
   </body>

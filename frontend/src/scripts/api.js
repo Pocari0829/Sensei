@@ -12,15 +12,18 @@ export const API_BASE = "http://127.0.0.1:5000";
  * @param {string} message - 사용자가 방금 입력한 문장.
  * @param {{role: "user"|"sensei"|"system", text: string}[]} history - 지금까지의 대화 기록 (이번 message는 제외).
  * @param {string|null} nickname - 하쿠가 사용자를 부를 이름. 없으면 이름 없이 대화한다.
- * @returns {Promise<{ok: true, question: string, is_correct: boolean, feedback?: string} | {ok: false, error: string}>}
+ * @param {{signal?: AbortSignal}} options - signal: 채팅 화면의 [멈추기] 버튼이 요청을 취소할 때 쓰는 AbortController 의 signal.
+ * @returns {Promise<{ok: true, question: string, is_correct: boolean, feedback?: string} | {ok: false, error: string, aborted?: true}>}
  *   is_correct 가 false 면 feedback 이 정오 판별 알림이다. (하쿠의 말이 아니라 "시스템 알림" 박스에 띄운다)
+ *   멈추기로 취소됐으면 aborted: true 다. (오류가 아니므로 알림을 띄우지 않는다)
  */
-export async function askHaku(message, history = [], nickname = null) {
+export async function askHaku(message, history = [], nickname = null, { signal } = {}) {
   try {
     const res = await fetch(`${API_BASE}/ask-haku`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history, nickname }),
+      signal,
     });
 
     // 서버가 500이어도 JSON 바디를 내려주므로 먼저 파싱을 시도한다.
@@ -37,6 +40,8 @@ export async function askHaku(message, history = [], nickname = null) {
 
     return data;
   } catch (err) {
+    // 멈추기 버튼으로 취소한 경우. (응답을 읽는 도중에 취소돼도 여기로 온다)
+    if (signal?.aborted) return { ok: false, error: "취소됐어요.", aborted: true };
     // fetch 자체가 실패하는 경우(서버가 꺼져 있음, CORS, 네트워크 등)도 여기로 온다.
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };

@@ -17,12 +17,6 @@ const dragHint = document.getElementById("drag-hint");
 const dragHintText = document.getElementById("drag-hint-text");
 const topicHeader = document.getElementById("topic-header");
 const topicNameEl = document.getElementById("topic-name");
-const topicDisplay = document.getElementById("topic-display");
-const topicEditWrap = document.getElementById("topic-edit");
-const topicActions = document.getElementById("topic-actions");
-const topicInput = document.getElementById("topic-input");
-const editTopicBtn = document.getElementById("edit-topic-btn");
-const topicSaveBtn = document.getElementById("topic-save-btn");
 const stage = document.getElementById("stage");
 const stageBubble = document.getElementById("stage-bubble");
 const stageFeedback = document.getElementById("stage-feedback");
@@ -32,13 +26,15 @@ const quickActions = document.getElementById("quick-actions");
 const composerForm = document.getElementById("composer");
 const composerInput = document.getElementById("composer-input");
 const sendBtn = document.getElementById("send-btn");
-const newTopicBtn = document.getElementById("new-topic-btn");
 const easierBtn = document.getElementById("easier-btn");
 const dontKnowBtn = document.getElementById("dontknow-btn");
 const quizBtn = document.getElementById("quiz-btn");
 
 let activeSession = null;
+// 메시지를 보내고 하쿠의 대답을 기다리는 중인지. 이동안 보내기 버튼은 [멈추기] 버튼이 된다.
 let isSending = false;
+// 지금 진행 중인 전송의 AbortController. [멈추기]를 누르면 abort() 해서 하쿠에게 보낸 요청을 취소한다.
+let sendController = null;
 
 // 캐릭터 화면("character", 기본값) ↔ 전체 대화 목록("list"). 대화 중에만 "list"로 바뀔 수 있고,
 // 손잡이(#drag-hint)를 드래그/탭하면 바뀐다. 메시지를 보내면 항상 "character"로 돌아온다.
@@ -145,7 +141,7 @@ function showSessionInUrl(id) {
  * 목록(#message-list)과 달리 캐릭터 화면은 항상 "지금 하쿠가 하고 있는 말" 한 줄만 보여준다.
  *   - 대화 전: 인사말 "안녕!"
  *   - 그 밖: 가장 최근 하쿠의 말. 그 턴에 정오 판별에서 틀렸으면(system / 예전 check) 말풍선 위에 빨간 알림도 띄운다.
- *   - 마지막이 사용자 말(하쿠 답을 기다리는 중): 그 직전 하쿠 말을 그대로 유지해서 보여준다
+ *   - 마지막이 사용자 말(하쿠 답을 기다리는 중이거나 [멈추기]로 취소함): 그 직전 하쿠 말을 그대로 유지해서 보여준다
  *     (답이 오면 render()가 다시 불려서 새 말로 바뀐다)
  */
 function renderStage(messages) {
@@ -176,9 +172,16 @@ function renderStage(messages) {
     stageFeedback.hidden = false;
   }
 
+  const hakuText = turn.findLast((m) => m.role === "sensei")?.text;
+  if (!hakuText) {
+    // 아직 하쿠가 한 마디도 안 한 상태(첫 메시지를 보내자마자 [멈추기] 등) — 인사말로 둔다.
+    // (대답을 기다리는 중이면 바로 뒤에 showStageTyping() 이 "..." 로 바꾼다)
+    stageBubble.className = "chat-greeting";
+    stageBubble.textContent = "안녕!";
+    return;
+  }
   stageBubble.className = "chat-greeting chat-greeting--talk";
-  // 아직 하쿠가 한 마디도 안 한 상태(첫 메시지를 막 보낸 직후) — 기다리는 느낌만 준다.
-  stageBubble.textContent = turn.findLast((m) => m.role === "sensei")?.text ?? "음...";
+  stageBubble.textContent = hakuText;
 }
 
 /** 현재 세션 상태(activeSession)와 화면 모드(view)에 맞춰 화면 전체를 다시 그린다. */
@@ -304,11 +307,27 @@ stage.addEventListener("pointercancel", () => {
   stageSwipeStartY = null;
 });
 
+/**
+ * 하쿠의 대답을 기다리는 중인지 표시한다. 입력창은 막지 않아서(다음 말을 미리 써 둘 수 있게)
+ * 보내기 버튼만 [멈추기] 모양으로 바꾼다. 기다리는 동안 Enter 로는 보내지지 않는다 (sendMessage 가 무시).
+ */
 function setSending(sending) {
   isSending = sending;
-  composerInput.disabled = sending;
-  sendBtn.disabled = sending;
+  sendBtn.classList.toggle("is-stop", sending);
+  sendBtn.setAttribute("aria-label", sending ? "대답 멈추기" : "보내기");
 }
+
+/** [멈추기]: 진행 중인 전송을 취소한다. 화면 정리는 sendMessage 가 취소를 알아채고 한다. */
+function stopSending() {
+  sendController?.abort();
+}
+
+// 기다리는 중에 보내기 버튼(= 멈추기)을 누르면 보내지 않고 멈춘다.
+sendBtn.addEventListener("click", (e) => {
+  if (!isSending) return;
+  e.preventDefault();
+  stopSending();
+});
 
 // ─────────────────────────────────────────────
 // 타이핑 효과: 하쿠의 대사를 한 글자씩 찍어 보여준다.
@@ -387,15 +406,32 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
   view = "character";
   hideAlert();
 
+  const controller = new AbortController();
+  sendController = controller;
   setSending(true);
   composerInput.value = "";
 
-  // 저장에 실패하면 보낸 말을 입력칸에 되돌려 놓고 멈춘다.
-  const stopWithAlert = (message) => {
-    composerInput.value = text;
-    showAlert(message);
+  // 이번 전송이 끝났다. (대답을 받았거나, 실패했거나, 멈췄거나)
+  const finish = () => {
+    if (sendController === controller) sendController = null;
     setSending(false);
     composerInput.focus();
+  };
+
+  // [멈추기]로 취소됐으면: 캐릭터 화면의 "..." 를 원래 모습(직전 하쿠의 말)으로 되돌리고 끝낸다.
+  // 보낸 말은 이미 저장돼 있으면 대화에 그대로 남는다. 늦게 오는 대답은 받지 않는다 (요청 자체를 취소했다).
+  const stopIfAborted = () => {
+    if (!controller.signal.aborted) return false;
+    render();
+    finish();
+    return true;
+  };
+
+  // 저장에 실패하면 보낸 말을 입력칸에 되돌려 놓고 멈춘다. (그 사이 새로 써 둔 글이 있으면 덮어쓰지 않는다)
+  const stopWithAlert = (message) => {
+    if (!composerInput.value.trim()) composerInput.value = text;
+    showAlert(message);
+    finish();
   };
 
   // 첫 메시지면 이때 DB 에 세션을 만든다.
@@ -408,6 +444,7 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
     }
     showSessionInUrl(activeSession.id);
   }
+  if (stopIfAborted()) return;
 
   // 하쿠의 대답을 기다리는 사이에 "새 주제" 를 눌러도, 대답은 원래 세션에 붙도록 붙잡아 둔다.
   const session = activeSession;
@@ -426,6 +463,7 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
     return;
   }
   render();
+  if (stopIfAborted()) return;
 
   // 방금 한 설명이 어느 수준인지도 판단받는다. 하쿠의 대답과 따로 돌고, 기다리지 않는다.
   if (!skipLevel) {
@@ -434,7 +472,8 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
 
   showStageTyping();
 
-  const result = await askHaku(text, historyBeforeThisTurn, nickname);
+  const result = await askHaku(text, historyBeforeThisTurn, nickname, { signal: controller.signal });
+  if (stopIfAborted()) return;
 
   // 응답을 받자마자 일단 캐릭터 화면을 "..." 가 아닌 평소 모습으로 되돌려 둔다.
   // (성공하면 바로 아래에서 새 말로 다시 그린다. 실패해도 "..." 가 그대로 남지 않는다)
@@ -473,8 +512,7 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
     showAlert(result.error || "답변을 가져오지 못했어요. 다시 시도해주세요.");
   }
 
-  setSending(false);
-  composerInput.focus();
+  finish();
 }
 
 /**
@@ -518,59 +556,6 @@ function recordAnswerLevel(session, text, question) {
 composerForm.addEventListener("submit", (e) => {
   e.preventDefault();
   sendMessage(composerInput.value);
-});
-
-newTopicBtn.addEventListener("click", () => {
-  // 새 세션은 첫 메시지를 보낼 때 DB 에 만든다. 그 전까지는 빈 화면이다.
-  activeSession = null;
-  // 새로고침해도 빈 화면이 유지되게 주소에 표시한다. (?new 가 없으면 최근 세션이 열린다)
-  window.history.replaceState(null, "", "?new");
-  render();
-  composerInput.focus();
-});
-
-// ─────────────────────────────────────────────
-// 주제 이름 수정: 자동으로 붙은 이름(deriveTopic)이 마음에 안 들면
-// 연필 버튼을 눌러 학습자가 직접 바꿀 수 있다.
-// ─────────────────────────────────────────────
-function enterTopicEdit() {
-  if (!activeSession) return;
-  topicInput.value = activeSession.topic || "";
-  topicDisplay.hidden = true;
-  topicActions.hidden = true;
-  topicEditWrap.hidden = false;
-  topicInput.focus();
-  topicInput.select();
-}
-
-function exitTopicEdit() {
-  topicDisplay.hidden = false;
-  topicActions.hidden = false;
-  topicEditWrap.hidden = true;
-}
-
-function saveTopic() {
-  if (activeSession) {
-    const value = topicInput.value.trim();
-    activeSession.topic = value || activeSession.topic || "학습 중";
-    topicNameEl.textContent = activeSession.topic;
-    store
-      .saveSession(activeSession)
-      .catch((err) => showAlert(`주제 이름을 저장하지 못했어요. (${err.message})`));
-  }
-  exitTopicEdit();
-}
-
-editTopicBtn.addEventListener("click", enterTopicEdit);
-topicSaveBtn.addEventListener("click", saveTopic);
-topicInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    saveTopic();
-  }
-  if (e.key === "Escape") {
-    exitTopicEdit();
-  }
 });
 
 easierBtn.addEventListener("click", () => {
@@ -651,13 +636,15 @@ async function init() {
   render();
 
   // 불러오는 동안 입력을 막는다.
-  setSending(true);
+  composerInput.disabled = true;
+  sendBtn.disabled = true;
   try {
     // 닉네임이 없으면 이름 정하기 화면으로 넘어가므로 세션은 불러오지 않는다.
     const leaving = await loadNickname();
     if (!leaving) await loadSession();
   } finally {
-    setSending(false);
+    composerInput.disabled = false;
+    sendBtn.disabled = false;
     composerInput.focus();
   }
 

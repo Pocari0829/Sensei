@@ -356,6 +356,20 @@ body[data-page="chat"] #message-list {
   width: 18px;
   height: 18px;
 }
+/* 하쿠가 대답을 만드는 중: 보내기 화살표 대신 흰 네모(멈추기) */
+.send__stop {
+  display: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: currentColor;
+}
+.send.is-stop img {
+  display: none;
+}
+.send.is-stop .send__stop {
+  display: block;
+}
 
 /* 버튼 */
 .pill {
@@ -909,64 +923,33 @@ body[data-page="chat"] #message-list {
   -webkit-user-select: none;
   user-select: none;
 }
-.topic-header {
+/* 모든 화면 공통 상단 바: 왼쪽 삼선(☰) 메뉴 + 화면 제목 + (있으면) 오른쪽에 그 화면 전용 버튼 */
+.topbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 20px 8px;
+  gap: 2px;
+  min-height: 64px;
+  padding: 12px 20px 8px 6px;
 }
-.topic-header h1 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.topbar .chat__menu {
+  padding: 12px 14px;
+}
+.topbar__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.topic-header h1 img {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-.topic-actions {
+.topbar__actions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
-}
-.topic-edit {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-}
-.topic-edit input {
-  flex: 1;
-  height: 34px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-tint);
-  color: var(--foreground);
-  outline: none;
-}
-.topic-edit input:focus {
-  border-color: var(--primary);
-}
-
-/* 시험지 */
-.quiz-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 20px 8px;
-}
-.quiz-header h1 {
-  flex: 1;
-  padding-right: 28px;
-  text-align: center;
-  font-size: 14px;
-  font-weight: 700;
 }
 .quiz-title {
   font-size: 24px;
@@ -1139,17 +1122,6 @@ body[data-page="chat"] #message-list {
 }
 
 /* 학습 기록 */
-.history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px 12px;
-}
-.history-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
 .session {
   display: flex;
   align-items: center;
@@ -1169,7 +1141,7 @@ body[data-page="chat"] #message-list {
   text-decoration: none;
   color: inherit;
 }
-.session__delete {
+.session__action {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1183,16 +1155,44 @@ body[data-page="chat"] #message-list {
   color: var(--muted-fg);
   cursor: pointer;
 }
-.session__delete svg {
+.session__action svg {
   width: 16px;
   height: 16px;
 }
-.session__delete:active {
+.session__action:active {
   opacity: 0.6;
 }
-.session__delete:disabled {
+.session__action:disabled {
   opacity: 0.3;
   cursor: wait;
+}
+/* 주제 이름 수정 칸: 연필을 누르면 카드 안의 링크·버튼 대신 보인다 */
+.session__edit {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session__edit input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  outline: none;
+}
+.session__edit input:focus {
+  border-color: var(--primary);
+}
+.session__edit .pill {
+  flex-shrink: 0;
 }
 .session img {
   width: 40px;
@@ -1267,42 +1267,6 @@ body[data-page="chat"] #message-list {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted-fg);
-}
-
-/* 하단 탭 바 (채팅 / 학습 기록 / 프로필) — nav.js가 매번 그려 넣는다 */
-.bottom-nav {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-around;
-  padding: 6px 8px calc(10px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--border);
-  background: var(--card);
-}
-.bottom-nav__item {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 6px 4px;
-  border: 0;
-  border-radius: 14px;
-  background: none;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--muted-fg);
-  text-decoration: none;
-  cursor: pointer;
-}
-.bottom-nav__item svg {
-  width: 20px;
-  height: 20px;
-}
-.bottom-nav__item.is-active {
-  color: var(--primary);
-  background: var(--surface-tint);
 }
 
 /* 하쿠가 답을 준비 중일 때 말풍선 안에서 통통 튀는 점 세 개 */

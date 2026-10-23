@@ -134,6 +134,19 @@ export async function saveSession(session) {
   return session;
 }
 
+/** 세션의 주제 이름만 바꾼다. (기록 화면의 연필 버튼) 대화(haku_log)는 건드리지 않는다. */
+export async function renameSession(id, topic) {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("sessions")
+    .update({ topic })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id");
+  if (error) throw error;
+  if (data.length === 0) throw new Error("이미 삭제됐거나 내 기록이 아니에요.");
+}
+
 /**
  * 메시지를 하나 붙이고 DB 에 저장한다. 첫 사용자 메시지로 주제 이름을 정한다.
  * 저장에 실패하면 오류를 던지지만, 메시지는 session.messages 에 남아 있다.

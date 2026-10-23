@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ─────────────────────────────────────────────
 import * as store from "./store.js";
 import { generateQuiz, gradeQuiz } from "./api.js";
+import { getLevel } from "./user.js";
 
 // 나중에 채점할 때 쓰려고 받은 정답을 여기 보관해둔다. (화면에는 안 보임)
 let currentQuizItems = [];
@@ -315,7 +316,12 @@ async function loadQuiz() {
 async function addOneQuizItem(session, quiz, history, scroll) {
   // 이미 낸 문제를 같이 보내서, 겹치지 않는 새 문제를 받는다.
   // 문제 유형(빈칸 주관식 / 객관식)은 정해서 보내지 않는다. 백엔드의 Gemini 가 대화 내용에 더 맞는 쪽을 고른다.
-  const result = await generateQuiz(history, quiz.items.map((item) => item.question));
+  // 내 수준(1~5)도 같이 보내서, 수준이 높을수록 더 어려운 문제를 받는다. 못 읽으면 수준 없이 만든다.
+  const level = await getLevel().catch((err) => {
+    console.warn("수준을 불러오지 못했어요:", err);
+    return null;
+  });
+  const result = await generateQuiz(history, quiz.items.map((item) => item.question), level);
 
   // 실패해도 예전 문제는 화면에 그대로 남는다. 저장도 바꾸지 않으므로 다음에 다시 시도된다.
   if (!result.ok) {

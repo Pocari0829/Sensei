@@ -93,15 +93,15 @@ export async function saveAvatar(avatar) {
 }
 
 // ─────────────────────────────────────────────
-// 수준(level): 숫자가 작을수록 쉽게. 나중에 하쿠가 질문 난이도를 맞출 때 쓰려고 모은다.
+// 수준(level): 숫자가 작을수록 쉽게. 하쿠의 질문과 시험지 문제의 난이도를 이 수준에 맞춘다. (높을수록 어렵게)
 //   1 초등 저학년 · 2 초등 고학년 · 3 중학생 · 4 고등학생 · 5 대학생 이상
 //   level_init     처음 수준. 여기서는 바꾸지 않는다.
 //   level_score    지금 수준을 소수까지 담은 점수. 설명 하나로 수준이 확 바뀌지 않게 이 점수를 조금씩 움직인다.
 //   level_current  지금 수준. level_score 를 반올림한 값.
 // 점수가 바뀌는 때:
 //   "더 쉽게" 를 누르면 1 내려간다. (lowerLevel)
-//   설명을 보내면 백엔드가 판단한 그 설명의 수준 쪽으로 20% 다가간다. (applyAnswerLevel)
-// 아직 하쿠의 질문이나 화면에는 반영하지 않는다.
+//   설명을 보내면 백엔드가 판단한 그 설명의 수준 쪽으로 다가간다. 오를 때 30%, 내릴 때 20%. (applyAnswerLevel)
+// 쓰는 곳: getLevel() 로 읽어서 하쿠에게 질문할 때(chat.js), 시험지 문제를 만들 때(quiz.js) 백엔드에 같이 보낸다.
 // ─────────────────────────────────────────────
 
 // 가장 낮은(쉬운) 수준. 이미 여기면 "더 쉽게" 를 눌러도 그대로 둔다.
@@ -111,9 +111,12 @@ const LEVEL_MAX = 5;
 // DB(users)의 level_init / level_current 기본값과 같은 값.
 // users 행이 없거나 수준 칸이 모두 비어 있으면 이 수준이었던 것으로 본다.
 const LEVEL_DEFAULT = 3;
-// 설명 하나가 점수를 움직이는 정도. 0.2 = 판단한 수준과의 차이의 20% 만큼 다가간다.
-// (예: 점수 3 에서 4 수준의 설명을 하면 3.2, 한 번 더 하면 3.36. 한두 번 튀는 설명에 크게 흔들리지 않는다)
-const ANSWER_WEIGHT = 0.2;
+// 설명 하나가 점수를 움직이는 정도. 0.3 = 판단한 수준과의 차이의 30% 만큼 다가간다.
+// 잘한 설명이 빨리 보상받도록 오를 때를 더 크게 한다. 내릴 때는 한두 번 실수한 설명에 크게 흔들리지 않게 작게.
+//   오를 때 (예: 점수 3 에서 4 수준 설명) 3 → 3.3 → 3.51 : 두 번이면 레벨 4
+//   내릴 때 (예: 점수 3 에서 2 수준 설명) 3 → 2.8 → 2.64 → 2.51 → 2.41 : 네 번이면 레벨 2
+const RISE_WEIGHT = 0.3;
+const FALL_WEIGHT = 0.2;
 
 function clampLevel(score) {
   return Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, score));
@@ -168,5 +171,19 @@ export function lowerLevel() {
 
 /** 설명 하나의 수준(1~5)을 반영한다. 점수를 그쪽으로 조금 움직이고, 지금 수준을 돌려준다. */
 export function applyAnswerLevel(answerLevel) {
-  return changeLevelScore((score) => score + (answerLevel - score) * ANSWER_WEIGHT);
+  return changeLevelScore((score) => {
+    const weight = answerLevel > score ? RISE_WEIGHT : FALL_WEIGHT;
+    return score + (answerLevel - score) * weight;
+  });
+}
+
+/**
+ * 지금 수준(1~5). 하쿠의 질문과 시험지 문제의 난이도를 맞출 때 백엔드에 보낸다.
+ * 바꾸는 중인 점수(설명 수준 반영, "더 쉽게")가 있으면 그게 끝난 뒤의 값을 읽는다.
+ */
+export function getLevel() {
+  return levelQueue.then(async () => {
+    const user = await requireUser();
+    return Math.round(clampLevel(await readLevelScore(user)));
+  });
 }

@@ -9,7 +9,7 @@
 
 import * as store from "./store.js";
 import { askHaku, judgeLevel } from "./api.js";
-import { applyAnswerLevel, getNickname, lowerLevel } from "./user.js";
+import { applyAnswerLevel, getLevel, getNickname, lowerLevel } from "./user.js";
 import { NICKNAME_PAGE, getCurrentUser } from "./auth.js";
 
 const phoneEl = document.querySelector(".phone");
@@ -67,6 +67,9 @@ function updateQuizBtn() {
 
 // 하쿠가 부르는 이름. DB(users.nickname)에서 불러오고, 하쿠에게 질문할 때 같이 보낸다.
 let nickname = null;
+// 내 수준 1~5 (users.level_current). 하쿠에게 질문할 때 같이 보내서, 높을수록 하쿠가 더 어렵게 묻게 한다.
+// 설명의 수준을 판단하거나 "더 쉽게" 를 누르면 바뀌므로 그때마다 새 값으로 바꿔 둔다. 못 불러왔으면 null (수준 없이 대화).
+let level = null;
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -478,7 +481,7 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
 
   showStageTyping();
 
-  const result = await askHaku(text, historyBeforeThisTurn, nickname, { signal: controller.signal });
+  const result = await askHaku(text, historyBeforeThisTurn, nickname, { signal: controller.signal, level });
   if (stopIfAborted()) return;
 
   // 응답을 받자마자 일단 캐릭터 화면을 "..." 가 아닌 평소 모습으로 되돌려 둔다.
@@ -561,7 +564,8 @@ function recordAnswerLevel(session, text, question) {
       if (!result.ok) throw new Error(result.error);
       if (!result.is_explanation) return;
       await store.addAnswerLevel(session.id, text, result.level, result.reason);
-      await applyAnswerLevel(result.level);
+      // 바뀐 수준은 다음 질문부터 하쿠에게 보낸다.
+      level = await applyAnswerLevel(result.level);
     })
     .catch((err) => console.warn("설명의 수준을 기록하지 못했어요:", err));
 }
@@ -580,7 +584,13 @@ easierBtn.addEventListener("click", () => {
       .catch((err) => console.warn("모르는 개념을 저장하지 못했어요:", err));
   }
   // 내 수준(users.level_current)도 한 단계 내린다. 저장을 기다리지 않고 바로 하쿠에게 보낸다.
-  lowerLevel().catch((err) => console.warn("수준을 낮추지 못했어요:", err));
+  // 바로 보내는 이 메시지부터 쉬운 질문이 오게, 화면이 들고 있는 수준을 먼저 내려 두고 저장이 끝나면 DB 값으로 맞춘다.
+  if (level) level = Math.max(1, level - 1);
+  lowerLevel()
+    .then((next) => {
+      level = next;
+    })
+    .catch((err) => console.warn("수준을 낮추지 못했어요:", err));
   sendMessage(EASIER_MESSAGE, { skipLevel: true });
 });
 dontKnowBtn.addEventListener("click", () => sendMessage(DONT_KNOW_MESSAGE, { skipLevel: true }));
@@ -650,6 +660,13 @@ async function init() {
   // 그 밖에는 이어서 볼 대화가 있을 수 있으므로, 불러온 뒤(loadSession)에 그린다.
   // (먼저 그리면 학습 기록에서 세션을 눌렀을 때 하쿠의 인사 "안녕!" 이 잠깐 보였다가 최근 하쿠의 말로 바뀐다)
   if (new URLSearchParams(window.location.search).has("new")) render();
+
+  // 내 수준은 기다리지 않고 따로 불러온다. (못 불러와도 수준 없이 대화할 수 있다)
+  getLevel()
+    .then((value) => {
+      level = value;
+    })
+    .catch((err) => console.warn("수준을 불러오지 못했어요:", err));
 
   // 불러오는 동안 입력을 막는다.
   composerInput.disabled = true;

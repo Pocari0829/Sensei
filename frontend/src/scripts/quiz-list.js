@@ -26,7 +26,9 @@ const SORTS = {
 
 /** 채점한 문제 중 틀린 비율(0~1). 채점한 문제가 없으면 null. */
 function wrongRate(summary) {
-  return summary.graded > 0 ? (summary.graded - summary.correct) / summary.graded : null;
+  return summary.graded > 0
+    ? (summary.graded - summary.correct) / summary.graded
+    : null;
 }
 
 function loadSort() {
@@ -52,7 +54,9 @@ function escapeHtml(text) {
 /** "오늘" / "어제" / "n일 전" 처럼 사람이 읽기 편한 상대 시간으로 바꾼다. (history.js 와 같다) */
 function relativeDay(ts) {
   const startOfDay = (t) => new Date(t).setHours(0, 0, 0, 0);
-  const diffDays = Math.round((startOfDay(Date.now()) - startOfDay(ts)) / 86_400_000);
+  const diffDays = Math.round(
+    (startOfDay(Date.now()) - startOfDay(ts)) / 86_400_000,
+  );
 
   if (diffDays <= 0) return "오늘";
   if (diffDays === 1) return "어제";
@@ -75,7 +79,8 @@ function quizCard(session, summary) {
     .filter(Boolean)
     .join(" · ");
   const left = summary.total - summary.graded;
-  const statusLabel = left > 0 ? `풀 문제 ${left}개` : `정답 ${summary.correct}/${summary.total}`;
+  const statusLabel =
+    left > 0 ? `풀 문제 ${left}개` : `정답 ${summary.correct}/${summary.total}`;
   const statusClass = left > 0 ? "status status--active" : "status";
   const params = new URLSearchParams({ session: session.id });
   if (session.topic) params.set("topic", session.topic);
@@ -83,7 +88,7 @@ function quizCard(session, summary) {
   return `
     <div class="session card">
       <a class="session__link" href="./quiz.html?${params}">
-        <img src="../../public/mascot.png" alt="" />
+        <img src="../../public/testimg.png" alt="" />
         <div class="session__body">
           <p class="session__topic">${topic}</p>
           <p class="session__meta">${meta}</p>
@@ -96,7 +101,7 @@ function quizCard(session, summary) {
 function emptyState() {
   return `
     <div class="card empty-illustration">
-      <img src="../../public/mascot.png" alt="" />
+      <img src="../../public/testimg.png" alt="" />
       <p class="empty-illustration__title">아직 시험지가 없어요</p>
       <p class="empty-illustration__text">채팅에서 하쿠에게 설명하고 [퀴즈 풀기]를 누르면<br />여기에 시험지가 쌓여요.</p>
     </div>`;
@@ -105,7 +110,7 @@ function emptyState() {
 function errorState(message) {
   return `
     <div class="card empty-illustration">
-      <img src="../../public/mascot.png" alt="" />
+      <img src="../../public/testimg.png" alt="" />
       <p class="empty-illustration__title">시험지를 불러오지 못했어요</p>
       <p class="empty-illustration__text">${escapeHtml(message)}<br />잠시 후 새로고침해 주세요.</p>
     </div>`;
@@ -113,7 +118,8 @@ function errorState(message) {
 
 /** 불러온 목록을 지금 정렬 기준으로 그린다. */
 function draw() {
-  for (const btn of sortButtons) btn.setAttribute("aria-pressed", String(btn.dataset.sort === sortBy));
+  for (const btn of sortButtons)
+    btn.setAttribute("aria-pressed", String(btn.dataset.sort === sortBy));
 
   if (entries.length === 0) {
     listEl.innerHTML = emptyState();
@@ -121,7 +127,9 @@ function draw() {
   }
 
   const byMade = (a, b) => b.summary.lastMadeAt - a.summary.lastMadeAt;
-  const sorted = [...entries].sort((a, b) => SORTS[sortBy](a, b) || byMade(a, b));
+  const sorted = [...entries].sort(
+    (a, b) => SORTS[sortBy](a, b) || byMade(a, b),
+  );
   listEl.innerHTML = sorted.map((e) => quizCard(e.session, e.summary)).join("");
 }
 
@@ -148,7 +156,8 @@ for (const btn of sortButtons) {
     } catch {
       // 저장소가 막혀 있어도(시크릿 모드 등) 이번 화면에서는 그대로 정렬된다.
     }
-    for (const b of sortButtons) b.setAttribute("aria-pressed", String(b === btn));
+    for (const b of sortButtons)
+      b.setAttribute("aria-pressed", String(b === btn));
     if (entries) draw();
   });
 }

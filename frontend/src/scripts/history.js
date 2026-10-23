@@ -19,7 +19,9 @@ function escapeHtml(text) {
 /** "오늘" / "어제" / "n일 전" 처럼 사람이 읽기 편한 상대 시간으로 바꾼다. */
 function relativeDay(ts) {
   const startOfDay = (t) => new Date(t).setHours(0, 0, 0, 0);
-  const diffDays = Math.round((startOfDay(Date.now()) - startOfDay(ts)) / 86_400_000);
+  const diffDays = Math.round(
+    (startOfDay(Date.now()) - startOfDay(ts)) / 86_400_000,
+  );
 
   if (diffDays <= 0) return "오늘";
   if (diffDays === 1) return "어제";
@@ -41,7 +43,7 @@ function sessionCard(session, isActive) {
   return `
     <div class="${cardClass}" data-id="${escapeHtml(session.id)}" data-topic="${escapeHtml(session.topic || "")}">
       <a class="session__link" href="./chat.html?session=${encodeURIComponent(session.id)}">
-        <img src="../../public/mascot.png" alt="" />
+        <img src="../../public/testimg.png" alt="" />
         <div class="session__body">
           <p class="session__topic">${topic}</p>
           <p class="session__meta">${meta}</p>
@@ -128,7 +130,8 @@ async function render() {
 // ─────────────────────────────────────────────
 function setEditing(card, editing) {
   card.querySelector(".session__link").hidden = editing;
-  for (const btn of card.querySelectorAll(".session__action")) btn.hidden = editing;
+  for (const btn of card.querySelectorAll(".session__action"))
+    btn.hidden = editing;
   const form = card.querySelector(".session__edit");
   form.hidden = !editing;
   if (editing) {
@@ -184,9 +187,14 @@ listEl.addEventListener("click", async (e) => {
   const btn = e.target.closest(".session__delete");
   if (!btn) return;
 
-  const topic = btn.closest(".session")?.querySelector(".session__topic")?.textContent ?? "";
-  if (!window.confirm(`'${topic}' 학습 기록을 삭제할까요?
-목록과 채팅에서 더 이상 볼 수 없어요.`)) return;
+  const topic =
+    btn.closest(".session")?.querySelector(".session__topic")?.textContent ??
+    "";
+  if (
+    !window.confirm(`'${topic}' 학습 기록을 삭제할까요?
+목록과 채팅에서 더 이상 볼 수 없어요.`)
+  )
+    return;
 
   btn.disabled = true;
   try {

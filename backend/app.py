@@ -73,11 +73,13 @@ MODEL_TIMEOUT_MS = 25_000
 LAST_MODEL_TIMEOUT_MS = 60_000
 QUIZ_FALLBACK_NOTICE = "오늘 사용량이 많아서 문제 품질이 조금 떨어질 수 있어요."
 # 문제 유형(빈칸 주관식 / 객관식) 고르기 전용 모델. 문제를 만드는 QUIZ_MODEL 보다 먼저 한 번 부른다.
-QUIZ_TYPE_MODEL = os.getenv("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
+#   예) QUIZ_TYPE_MODEL=gemini-3.5-flash-lite,gemma-4-26b-a4b-it
+QUIZ_TYPE_MODELS = _model_list("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
 # 대답 수준 판단 전용 모델. 메시지마다 불리고, 하쿠의 대답과 따로(기다리지 않고) 돈다.
 # 판단 결과는 채팅 화면이 저장하므로, 화면을 옮기기 전에 끝나야 기록된다. 그래서 빠른 모델을 쓴다.
 # (3.1-flash-lite 는 하루 한도를 따로 쓰지만 가끔 1분 넘게 걸려서, 그사이 화면을 옮기면 기록이 사라졌다)
-LEVEL_MODEL = os.getenv("LEVEL_MODEL", "gemini-3.5-flash-lite")
+#   예) LEVEL_MODEL=gemini-3.5-flash-lite,gemma-4-26b-a4b-it
+LEVEL_MODELS = _model_list("LEVEL_MODEL", "gemini-3.5-flash-lite")
 # 정리:  HAKU_MODEL = 하쿠 꼬리질문 / CHECK_MODEL = 정오 판별 / QUIZ_MODEL = 문제 생성
 #        QUIZ_TYPE_MODEL = 문제 유형 고르기 / GRADE_MODEL = 빈칸 주관식 채점 / LEVEL_MODEL = 대답 수준 판단
 # 무료 사용량은 모델마다 따로 계산되므로, 서로 다른 모델로 두면 하루에 더 많이 쓸 수 있다.
@@ -212,7 +214,8 @@ def _parse(res, schema):
 
 
 def _generate_with_retry(attempts=3, **kwargs):
-    """Gemini 가 잠깐 혼잡(503 UNAVAILABLE)하면 조금 기다렸다가 다시 시도한다. (기본 최대 3번)
+    """Gemini 가 잠깐 혼잡(503 UNAVAILABLE)하거나 서버 오류(500 INTERNAL)가 나면 조금 기다렸다가 다시 시도한다. (기본 최대 3번)
+    gemma 모델은 500 INTERNAL 이 자주 나지만 다시 부르면 대개 된다.
 
     정오 판별과 문제 생성이 쓴다. (하쿠 쪽 ask_haku 는 재시도 없이 한 번만 부른다)
     문제 유형 고르기는 실패해도 대신 정할 수 있어서 attempts 를 줄여 오래 기다리지 않는다.
@@ -221,7 +224,7 @@ def _generate_with_retry(attempts=3, **kwargs):
         try:
             return client.models.generate_content(**kwargs)
         except Exception as e:
-            busy = "503" in str(e) or "UNAVAILABLE" in str(e)
+            busy = any(code in str(e) for code in ("503", "UNAVAILABLE", "500", "INTERNAL"))
             if not busy or attempt == attempts - 1:
                 raise
             # 첫 실패 뒤 2초, 두 번째 실패 뒤 4초를 기다린다.
@@ -239,8 +242,9 @@ def _generate_with_models(models, contents, prompt, schema=None, temperature=Non
     schema 가 None 이면 JSON 이 아니라 그냥 글(res.text)을 받는다. (하쿠)
 
     한 모델이 실패하면(사용량 초과, 혼잡, 시간 초과, 응답이 깨짐 등) 기다리지 않고 바로 다음 모델로 넘어간다.
-    맨 뒤 모델(하나뿐이면 그 모델)은 혼잡할 때 잠깐 기다렸다가 한 번 더 시도한다. 모두 실패하면 마지막 오류를 그대로 올린다.
-    하쿠(HAKU_MODELS), 정오 판별(CHECK_MODELS), 문제 생성(QUIZ_MODELS), 채점(GRADE_MODELS) 이 쓴다.
+    맨 뒤 모델(하나뿐이면 그 모델)은 혼잡하거나 서버 오류가 나면 잠깐 기다렸다가 두 번 더 시도한다. 모두 실패하면 마지막 오류를 그대로 올린다.
+    하쿠(HAKU_MODELS), 정오 판별(CHECK_MODELS), 문제 생성(QUIZ_MODELS), 채점(GRADE_MODELS),
+    문제 유형 고르기(QUIZ_TYPE_MODELS), 대답 수준 판단(LEVEL_MODELS) 이 쓴다.
     """
     def config(timeout):
         json_only = {"response_mime_type": "application/json", "response_schema": schema} if schema else {}
@@ -263,9 +267,10 @@ def _generate_with_models(models, contents, prompt, schema=None, temperature=Non
         is_last = i == len(tries) - 1
         try:
             if is_last:
-                # 맨 뒤 모델은 잠깐 혼잡(503)하면 조금 기다렸다가 한 번 더 시도한다.
+                # 맨 뒤 모델은 잠깐 혼잡(503)하거나 서버 오류(500)가 나면 조금 기다렸다가 두 번 더 시도한다.
+                # (맨 뒤 gemma 는 500 이 자주 나지만 0.5초 만에 실패하므로 다시 부르는 비용이 적다)
                 res = _generate_with_retry(
-                    attempts=2, model=model, contents=contents, config=config(LAST_MODEL_TIMEOUT_MS)
+                    attempts=3, model=model, contents=contents, config=config(LAST_MODEL_TIMEOUT_MS)
                 )
             else:
                 res = client.models.generate_content(model=model, contents=contents, config=config(MODEL_TIMEOUT_MS))
@@ -550,17 +555,8 @@ def _choose_quiz_type(history, previous):
     contents.append(types.Content(role="user", parts=[types.Part(text=request_text)]))
 
     try:
-        res = _generate_with_retry(
-            attempts=2,
-            model=QUIZ_TYPE_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=prompts.CHOOSE_QUIZ_TYPE,  # prompts.py 의 유형 고르기 프롬프트
-                response_mime_type="application/json",
-                response_schema=QuizTypeResult,
-            ),
-        )
-        result = _parse(res, QuizTypeResult)
+        # prompts.py 의 유형 고르기 프롬프트
+        result, _ = _generate_with_models(QUIZ_TYPE_MODELS, contents, prompts.CHOOSE_QUIZ_TYPE, QuizTypeResult)
     except Exception as e:
         fallback = _fallback_quiz_type(previous)
         app.logger.warning("문제 유형을 고르지 못해서 %s 로 정함: %s", fallback, e)
@@ -679,17 +675,9 @@ def judge_level():
     text = f"하쿠의 질문: {question}\n사용자의 대답: {message}" if question else f"사용자의 설명: {message}"
 
     try:
-        res = _generate_with_retry(
-            attempts=2,
-            model=LEVEL_MODEL,
-            contents=[types.Content(role="user", parts=[types.Part(text=text)])],
-            config=types.GenerateContentConfig(
-                system_instruction=prompts.JUDGE_LEVEL,  # prompts.py 의 대답 수준 판단 프롬프트
-                response_mime_type="application/json",
-                response_schema=LevelResult,
-            ),
-        )
-        result = _parse(res, LevelResult)
+        contents = [types.Content(role="user", parts=[types.Part(text=text)])]
+        # prompts.py 의 대답 수준 판단 프롬프트
+        result, _ = _generate_with_models(LEVEL_MODELS, contents, prompts.JUDGE_LEVEL, LevelResult)
     except Exception as e:
         app.logger.warning("대답 수준을 판단하지 못함: %s", e)
         return jsonify(ok=False, error=f"대답 수준을 판단하지 못했어요: {e}"), 500

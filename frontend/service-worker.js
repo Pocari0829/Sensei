@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────
 
 // 캐시에 넣는 파일 목록이나 방식을 바꾸면 숫자를 올린다. 예전 캐시는 activate 에서 지운다.
-const CACHE_NAME = "sensei-v1";
+const CACHE_NAME = "sensei-v2";
 
 // 설치할 때 미리 받아 두는 파일. 하나가 없어도 나머지는 받는다.
 const PRECACHE = [
@@ -24,6 +24,11 @@ const PRECACHE = [
   "./src/pages/quiz.html",
   "./src/styles/style.css",
   "./public/mascot.png",
+  "./public/haku-shadow.png",
+  "./public/icon-menu.svg",
+  "./public/icon-send.svg",
+  "./public/icon-kakao.svg",
+  "./public/icon-question.svg",
   "./public/icons/icon-192.png",
   "./manifest.json",
 ];

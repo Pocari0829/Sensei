@@ -8,56 +8,41 @@
     <link rel="stylesheet" href="../styles/style.css" />
   </head>
   <body>
-    <div class="phone phone--tinted">
-      <div class="statusbar">
-        <span>9:41</span>
-        <div class="statusbar__icons">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="battery"></span>
-        </div>
-      </div>
-
-      <div class="body" style="padding: 0 24px 32px">
-        <header class="login-title">
-          <h1>SENSEI</h1>
-          <p>가르치며 배우는 <span class="mark">AI 학습</span></p>
+    <div class="phone">
+      <div class="login">
+        <header class="login-headline">
+          <h1>
+            진짜 <span class="accent">내 공부</span>가 필요할 때,<br />
+            처음부터 내가 가르치는 <span class="accent">나만의 학생</span>
+          </h1>
         </header>
 
         <!-- 하쿠 이미지 자리 -->
-        <div
-          class="mascot-slot mascot-slot--lg blob-stage"
-          style="flex: 1; align-items: center; padding: 16px 0"
-        >
-          <span class="cloud cloud--1"></span>
-          <span class="cloud cloud--2"></span>
-          <span class="cloud cloud--3"></span>
-          <div>
-            <img src="../../public/mascot.png" alt="하쿠 마스코트" />
-            <div class="mascot-ground"></div>
+        <div class="login-mascot" aria-hidden="true">
+          <img class="login-mascot__img" src="../../public/mascot.png" alt="" />
+          <img class="login-mascot__shadow" src="../../public/haku-shadow.png" alt="" />
+          <img class="login-mascot__question" src="../../public/icon-question.svg" alt="" />
+        </div>
+
+        <!-- 실제 로그인은 아래 소셜 로그인 버튼으로 이루어진다. 이 버튼은 그쪽으로 시선을 모은다 -->
+        <button type="button" class="login-primary" id="login-scroll-btn">로그인</button>
+
+        <div class="login-social">
+          <p class="login-social__label"><span>소셜 로그인</span></p>
+          <div class="login-social__row">
+            <!-- Google 공식 로그인 버튼이 이 자리에 그려진다 (login.js) -->
+            <div class="google-btn google-btn--circle" id="google-login-btn"></div>
+            <!-- 누르면 카카오 로그인 화면으로 이동했다가 돌아온다 (login.js) -->
+            <button type="button" class="social-circle social-circle--kakao" id="kakao-login-btn" aria-label="카카오로 로그인">
+              <img src="../../public/icon-kakao.svg" alt="" />
+            </button>
           </div>
         </div>
 
-        <div class="login-actions">
-          <!-- Google 공식 로그인 버튼이 이 자리에 그려진다 (login.js) -->
-          <div class="google-btn" id="google-login-btn"></div>
-          <!-- 누르면 카카오 로그인 화면으로 이동했다가 돌아온다 (login.js) -->
-          <button type="button" class="oauth oauth--kakao" id="kakao-login-btn">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
-              <path
-                d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-2.8-.4L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"
-              />
-            </svg>
-            카카오로 로그인
-          </button>
-          <p class="login-error" id="login-error" role="alert" hidden></p>
-          <p class="login-fineprint">로그인하면 하쿠가 당신만의 학습 기록을 기억하기 시작해요.</p>
-        </div>
+        <p class="login-error" id="login-error" role="alert" hidden></p>
+        <p class="login-fineprint">
+          아직 SENSEI 회원이 아니신가요?<span class="login-fineprint__link">회원가입</span>
+        </p>
       </div>
     </div>
 

@@ -12,35 +12,15 @@
   </head>
   <body data-page="chat">
     <div class="phone">
-      <div class="statusbar">
-        <span>9:41</span>
-        <div class="statusbar__icons">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="battery"></span>
-        </div>
-      </div>
+      <!-- 화면 이동은 이 삼선 메뉴로만 한다 (하단 탭바 없음) -->
+      <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu" aria-expanded="false">
+        <img src="../../public/icon-menu.svg" alt="" />
+      </button>
 
       <!-- 대화가 시작되면 이전 대화를 드래그해서 보라는 힌트가 나타난다 -->
       <div class="drag-hint" id="drag-hint" hidden>
         <span class="drag-hint__bar"></span>
         <p>드래그해서 이전 대화 보기</p>
-      </div>
-
-      <!-- 주제가 아직 없을 때: 기본 로고 헤더 -->
-      <div class="header" id="idle-header">
-        <span class="logo">SENSEI</span>
-        <button type="button" class="icon-btn" aria-label="음성으로 설명하기">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v4" />
-          </svg>
-        </button>
       </div>
 
       <!-- 첫 메시지를 보내면 주제 이름이 채워지는 헤더로 바뀐다 -->
@@ -81,20 +61,14 @@
         </div>
       </div>
 
-      <!-- 메시지가 하나도 없을 때: 인사말 + 마스코트 -->
-      <div class="body body--center" id="empty-state">
-        <div class="bubble bubble--sensei bubble--greeting">
-          안녕<span id="greeting-name"></span>! 오늘은 뭘 <span class="mark">가르쳐</span> 줄 거야?
+      <!-- 메시지가 하나도 없을 때: 인사말 + 마스코트 (시안 문구 그대로: "안녕!") -->
+      <main class="chat__empty" id="empty-state">
+        <div class="chat-greeting">안녕!</div>
+        <div class="chat-mascot" aria-hidden="true">
+          <img class="chat-mascot__img" src="../../public/mascot.png" alt="" />
+          <img class="chat-mascot__shadow" src="../../public/haku-shadow.png" alt="" />
         </div>
-        <div class="mascot-slot blob-stage">
-          <span class="cloud cloud--1"></span>
-          <span class="cloud cloud--2"></span>
-          <div>
-            <img src="../../public/mascot.png" alt="하쿠 마스코트" />
-            <div class="mascot-ground"></div>
-          </div>
-        </div>
-      </div>
+      </main>
 
       <!-- 대화가 시작되면 여기에 말풍선들이 JS로 채워진다 -->
       <div class="scroll" id="message-list" style="padding: 0 16px 12px" hidden></div>
@@ -109,22 +83,35 @@
         <input
           type="text"
           id="composer-input"
-          placeholder="지수한테 설명해줘..."
+          placeholder="대화를 시작해보세요"
           aria-label="설명 입력"
           autocomplete="off"
         />
         <button class="send" type="submit" id="send-btn" aria-label="보내기">
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round" aria-hidden="true">
-            <path d="m22 2-7 20-4-9-9-4Z" />
-          </svg>
+          <img src="../../public/icon-send.svg" alt="" />
         </button>
       </form>
-
-      <div class="bottom-nav" id="bottom-nav"></div>
     </div>
 
+    <!-- 삼선 메뉴(서랍). 하단 탭바 대신 이 메뉴로만 화면을 이동한다 -->
+    <div class="menu-overlay" id="menu-overlay"></div>
+    <nav class="menu" id="menu" aria-label="메뉴" aria-hidden="true" inert>
+      <button class="menu__close" type="button" id="btn-menu-close" aria-label="메뉴 닫기"></button>
+      <div class="menu__user">
+        <p class="menu__name" id="menu-nickname">닉네임</p>
+        <p class="menu__sub">하쿠의 선생님</p>
+      </div>
+      <ul class="menu__list">
+        <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat" aria-current="page">새 대화</a></li>
+        <li><a class="menu__item" href="./history.html" id="menu-history">학습 기록</a></li>
+        <li><a class="menu__item" href="./quiz.html" id="menu-test">빈틈 시험지</a></li>
+        <li><a class="menu__item" href="./profile.html" id="menu-profile">프로필</a></li>
+      </ul>
+      <button class="menu__logout" type="button" id="btn-logout">로그아웃</button>
+    </nav>
+
     <script type="module" src="../scripts/guard.js"></script>
-    <script type="module" src="../scripts/nav.js"></script>
+    <script type="module" src="../scripts/menu.js"></script>
     <script type="module" src="../scripts/chat.js"></script>
   </body>
 </html>

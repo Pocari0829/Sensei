@@ -2,21 +2,42 @@
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap");
 
+/* 로그인 화면 전용 브랜드 폰트 (DESIGN.md 디자인 시안 폰트) */
+@font-face {
+  font-family: "GmarketSans";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/GmarketSansLight.woff") format("woff");
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: "GmarketSans";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/GmarketSansMedium.woff") format("woff");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "GmarketSans";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/GmarketSansBold.woff") format("woff");
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
-  --background: #eeeaf7;
-  --foreground: #26224a;
+  --background: #eaf1fd;
+  --foreground: #1c2541;
   --card: #ffffff;
-  --primary: #4f46c8;
-  --primary-fg: #fbfaff;
-  --muted-fg: #86829e;
-  --surface-tint: #efecfa;
-  --border: #e6e3f2;
+  --primary: #0075e5;
+  --primary-fg: #fbfcff;
+  --muted-fg: #80869c;
+  --surface-tint: #eaf1fe;
+  --border: #e2e8f6;
   --kakao: #fee500;
   --kakao-fg: #3c2f16;
   --signal: #34c759;
-  --shadow-soft: 0 1px 2px rgba(38, 34, 74, 0.04), 0 6px 16px -8px rgba(60, 45, 130, 0.16);
-  --shadow-bubble: 0 8px 20px -8px rgba(79, 70, 200, 0.45);
-  --shadow-phone: 0 24px 60px -24px rgba(60, 45, 130, 0.35);
+  --font-brand: "GmarketSans", "Pretendard", system-ui, sans-serif;
+  --shadow-soft: 0 1px 2px rgba(28, 37, 65, 0.04), 0 6px 16px -8px rgba(30, 58, 138, 0.16);
+  --shadow-bubble: 0 8px 20px -8px rgba(0, 117, 229, 0.45);
+  --shadow-phone: 0 24px 60px -24px rgba(30, 58, 138, 0.35);
 }
 
 * {
@@ -87,11 +108,11 @@ body[data-page="chat"] .phone {
    빈 화면(인사말 + 마스코트)처럼 줄어들 수 없는 내용은 그대로 셸 높이에 들어가므로, 화면이 그보다 낮으면
    예전처럼 셸이 늘어나고 페이지가 스크롤된다. (셸이 잘려서 입력창·하단 탭이 사라지는 일은 없다)
    스크롤바: 휴대폰은 스크롤할 때만 얇게 떴다 사라지지만, 데스크톱(Windows)은 회색 기본 스크롤바가
-   폰 화면 안에 그대로 보여서 얇은 연보라색으로 바꾼다. */
+   폰 화면 안에 그대로 보여서 얇은 연파랑색으로 바꾼다. */
 body[data-page="chat"] #message-list {
   contain: size;
   scrollbar-width: thin;
-  scrollbar-color: rgba(79, 70, 200, 0.25) transparent;
+  scrollbar-color: rgba(0, 117, 229, 0.25) transparent;
 }
 
 /* 상태바 */
@@ -279,43 +300,42 @@ body[data-page="chat"] #message-list {
   color: var(--muted-fg);
 }
 
-/* 입력창 */
+/* 입력창: 회색 알약 하나 안에 입력창 + 파란 전송 버튼이 같이 들어간다 (DESIGN.md 채팅 화면 스펙) */
 .composer {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px 20px;
+  height: 58px;
+  margin: 8px 16px 20px;
+  padding: 0 7px 0 25px;
+  border-radius: 29px;
+  background: #efefef;
 }
 .composer input {
   flex: 1;
-  height: 44px;
-  padding: 0 16px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
   font: inherit;
-  font-size: 13px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-tint);
+  font-size: 15px;
+  border: 0;
+  background: transparent;
   color: var(--foreground);
   outline: none;
 }
 .composer input::placeholder {
-  color: var(--muted-fg);
-}
-.composer input:focus {
-  border-color: var(--primary);
+  color: #8d8d8d;
 }
 .send {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   border: 0;
   border-radius: 999px;
   background: var(--primary);
   color: var(--primary-fg);
-  box-shadow: var(--shadow-bubble);
   cursor: pointer;
 }
 .send:active {
@@ -323,9 +343,8 @@ body[data-page="chat"] #message-list {
 }
 .send:disabled {
   opacity: 0.5;
-  box-shadow: none;
 }
-.send svg {
+.send img {
   width: 18px;
   height: 18px;
 }
@@ -382,92 +401,190 @@ body[data-page="chat"] #message-list {
   flex: 1;
 }
 
-/* 로그인 */
-.login-title {
-  padding-top: 32px;
+/* 로그인 — DESIGN.md 디자인 시안 기준(393x852 프레임). 다이내믹 아일랜드(검은 알약)는 구현하지 않으므로
+   상태바 없이 .login 패딩만으로 상단 여백(125px)을 맞춘다 */
+.login {
+  flex: 1;
+  padding: 125px 44px 40px;
+  font-family: var(--font-brand);
+}
+.login-headline h1 {
+  margin: 0 -30px;
+  white-space: nowrap;
   text-align: center;
-}
-.login-title h1 {
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 34px;
   font-weight: 700;
-  letter-spacing: 0.18em;
-  line-height: 1;
+  font-size: 20px;
+  line-height: 24px;
+  letter-spacing: 1.4px;
 }
-.login-title p {
-  margin-top: 10px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--muted-fg);
+.login-headline .accent {
+  color: var(--primary);
 }
-.login-actions {
-  display: grid;
-  gap: 12px;
-  padding-bottom: 12px;
+
+/* 마스코트: 276x303 틀 안에 하쿠(182x249) + 그림자(276x63) + 물음표(16x28) 를 절대좌표로 배치 */
+.login-mascot {
+  position: relative;
+  width: 276px;
+  height: 303px;
+  margin: 62px auto 0;
 }
-.login-fineprint {
-  margin-top: 14px;
-  text-align: center;
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--muted-fg);
+.login-mascot__img {
+  position: absolute;
+  left: 49px;
+  top: 0;
+  width: 182px;
+  height: 249px;
+  object-fit: cover;
 }
-.oauth {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 52px;
-  font-size: 14px;
-  font-weight: 700;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--card);
-  color: var(--foreground);
-  box-shadow: var(--shadow-soft);
-  text-decoration: none;
+.login-mascot__shadow {
+  position: absolute;
+  left: 0;
+  top: 240px;
+  width: 276px;
+  height: 63px;
+  object-fit: cover;
 }
-.oauth:active {
-  opacity: 0.85;
+.login-mascot__question {
+  position: absolute;
+  left: 238px;
+  top: 51px;
+  width: 16px;
+  height: 28px;
 }
-.oauth--kakao {
-  border-color: transparent;
-  background: var(--kakao);
-  color: var(--kakao-fg);
-}
-.oauth svg {
-  width: 18px;
-  height: 18px;
-}
-/* Google 공식 로그인 버튼 자리 (login.js 가 그림).
-   버튼 안쪽은 Google 이 그려서 CSS 로 못 바꾸므로, 바깥에 원래 버튼과 같은 그림자만 둘러 준다.
-   (버튼 위를 덮지는 않는다. 덮으면 Google 에 로그인된 Chrome 이 클릭을 무시한다)
-   높이를 미리 잡아둬서 버튼이 뜰 때 화면이 덜컹이지 않게 한다 */
-.google-btn {
-  display: flex;
-  justify-content: center;
-  min-height: 40px;
-  border-radius: 999px;
-  box-shadow: var(--shadow-soft);
-}
-/* 주의: 버튼을 키우려고 transform: scale() 을 걸면 안 된다.
-   같은 비율로 키워도 Chrome 은 "사용자 눈에 안 보이는 버튼"으로 판정해서 클릭이 무시될 수 있다.
-   (투명하게 숨기거나 다른 것으로 덮는 것도 마찬가지). 높이는 Google 이 정한 40px 이 최대다. */
-/* 카카오 버튼은 <button> 이라서 글꼴/너비/커서를 직접 맞춘다 */
-button.oauth {
+
+/* 로그인 버튼: 실제 로그인 기능은 없고(이메일/비밀번호 로그인 미지원),
+   누르면 아래 소셜 로그인 쪽으로 시선을 모은다 (login.js) */
+.login-primary {
+  display: block;
   width: 100%;
-  font-family: inherit;
+  height: 48px;
+  margin-top: 28px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding-top: 3px; /* GmarketSans 글리프가 위로 떠 보여서 보정 */
   cursor: pointer;
 }
-.oauth:disabled {
+.login-primary:active {
+  opacity: 0.85;
+}
+
+.login-social {
+  margin-top: 32px;
+}
+/* "소셜 로그인" 글자 양옆에 가는 구분선 */
+.login-social__label {
+  display: grid;
+  grid-template-columns: 100px 1fr 100px;
+  align-items: center;
+  height: 14px;
+  color: var(--primary);
+  font-family: var(--font-brand);
+  font-weight: 300;
+  font-size: 14px;
+  letter-spacing: 0.7px;
+  text-align: center;
+}
+.login-social__label::before,
+.login-social__label::after {
+  content: "";
+  height: 1px;
+  background: #3e83c4;
+}
+.login-social__label span {
+  padding-top: 2px;
+}
+.login-social__row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 23px;
+  margin-top: 31px;
+  padding-left: 3px;
+  transition: transform 0.3s ease;
+}
+/* 위 "로그인" 버튼을 누르면 잠깐 커졌다 돌아오며 시선을 끈다 */
+.login-social.is-highlight .login-social__row {
+  animation: login-social-pulse 0.6s ease;
+}
+@keyframes login-social-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* 소셜 로그인 아이콘 버튼 50x50. 카카오는 아이콘 SVG 안에 노란 원이 이미 포함돼 있다 */
+.social-circle {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+.social-circle img {
+  width: 50px;
+  height: 50px;
+}
+.social-circle:active {
+  opacity: 0.85;
+}
+.social-circle:disabled {
   opacity: 0.5;
   cursor: default;
 }
+/* Google 공식 로그인 버튼 자리 (login.js 가 그림, type: "icon" 이라 동그란 아이콘만 그려진다).
+   버튼 안쪽은 Google 이 그려서 CSS 로 못 바꾸므로, 바깥 칸만 카카오 버튼과 같은 크기(50x50)로 맞춘다.
+   (버튼 위를 덮지는 않는다. 덮으면 Google 에 로그인된 Chrome 이 클릭을 무시한다) */
+.google-btn--circle {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 50px;
+  height: 50px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #fff;
+}
+/* 주의: 버튼을 키우려고 transform: scale() 을 걸면 안 된다.
+   같은 비율로 키워도 Chrome 은 "사용자 눈에 안 보이는 버튼"으로 판정해서 클릭이 무시될 수 있다.
+   (투명하게 숨기거나 다른 것으로 덮는 것도 마찬가지). 크기는 Google 이 정한 40px 이 최대다. */
 .login-error {
+  margin-top: 12px;
   text-align: center;
   font-size: 12px;
   line-height: 1.5;
   color: #e5484d;
+}
+.login-fineprint {
+  margin-top: 46px;
+  text-align: center;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  color: #a3a3a3;
+  padding-right: 6px;
+}
+.login-fineprint__link {
+  margin-left: 8px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 0.6px;
 }
 
 /* 이름 정하기 화면 (nickname.html): 처음 로그인했을 때 하쿠가 부를 이름을 정한다 */
@@ -548,7 +665,7 @@ button.oauth {
   height: 230px;
   transform: translate(-50%, -54%);
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(79, 70, 200, 0.14), rgba(79, 70, 200, 0) 72%);
+  background: radial-gradient(circle, rgba(0, 117, 229, 0.14), rgba(0, 117, 229, 0) 72%);
   z-index: 0;
 }
 .blob-stage > * {
@@ -561,7 +678,7 @@ button.oauth {
   position: absolute;
   z-index: 0;
   border-radius: 999px;
-  background: rgba(79, 70, 200, 0.1);
+  background: rgba(0, 117, 229, 0.1);
 }
 .cloud--1 {
   top: 14%;
@@ -606,13 +723,72 @@ button.oauth {
   right: -3px;
   bottom: 1px;
   height: 0.4em;
-  background: rgba(79, 70, 200, 0.22);
+  background: rgba(0, 117, 229, 0.22);
   border-radius: 3px;
   transform: rotate(-1deg);
   z-index: -1;
 }
 
 /* 대화 화면 */
+/* 삼선 메뉴 버튼 — 화면 이동은 이것 하나로만 한다 (하단 탭바 없음). 항상 맨 위, 빈 화면이든 대화 중이든 보인다 */
+.chat__menu {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  width: fit-content;
+  padding: 24px 20px 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.chat__menu img {
+  width: 24px;
+  height: 19px;
+}
+
+/* 메시지가 하나도 없을 때: 인사말 + 마스코트 (시안 문구 그대로 "안녕!") */
+.chat__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  padding-top: 200px;
+}
+.chat-greeting {
+  width: 272px;
+  height: 49px;
+  display: grid;
+  place-items: center;
+  padding-bottom: 7px;
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft);
+  font-weight: 600;
+  font-size: 14px;
+}
+.chat-mascot {
+  position: relative;
+  width: 276px;
+  height: 374px;
+  margin-top: 22px;
+}
+.chat-mascot__img {
+  position: absolute;
+  left: 24px;
+  top: -1px;
+  width: 228px;
+  height: 322px;
+  object-fit: cover;
+}
+.chat-mascot__shadow {
+  position: absolute;
+  left: 0;
+  top: 310px;
+  width: 276px;
+  height: 63px;
+  object-fit: cover;
+}
+
 .drag-hint {
   display: flex;
   flex-direction: column;
@@ -1170,46 +1346,122 @@ button.oauth {
   }
 }
 
-/* 말로 보내기 — chat.js 가 입력창의 보내기 버튼 앞에 끼워 넣는 마이크 버튼 */
-.mic {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-tint);
-  color: var(--primary);
+/* =========================================================
+   삼선 메뉴 (서랍) — chat.html 등에서 하단 탭바 대신 쓰는 화면 이동 수단
+   ========================================================= */
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.2s ease,
+    visibility 0.2s;
+  z-index: 20;
+}
+/* left:0 으로 "진짜 화면 왼쪽 끝"에 둬야 translateX(-105%) 가 어느 화면 폭에서든 확실히 밀려난다.
+   (전에는 .phone 카드 왼쪽 끝 기준으로 계산해서, 데스크톱처럼 .phone 보다 화면이 넓으면
+   평소에도 메뉴가 안 밀려나고 그대로 보이는 버그가 있었다) */
+.menu {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(280px, 78vw);
+  background: var(--card);
+  border-radius: 0 20px 20px 0;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
+  transform: translateX(-105%);
+  transition: transform 0.25s ease;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  padding: 68px 0 32px;
+}
+body.menu-open .menu-overlay {
+  opacity: 1;
+  visibility: visible;
+}
+body.menu-open .menu {
+  transform: translateX(0);
+}
+body.menu-open {
+  overflow: hidden;
+}
+.menu__close {
+  position: absolute;
+  left: 24px;
+  top: 68px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: none;
   cursor: pointer;
 }
-.mic svg {
-  width: 18px;
-  height: 18px;
+.menu__close::before,
+.menu__close::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 11px;
+  width: 22px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--foreground);
 }
-.mic:disabled {
+.menu__close::before {
+  transform: rotate(45deg);
+}
+.menu__close::after {
+  transform: rotate(-45deg);
+}
+.menu__user {
+  padding: 52px 24px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.menu__name {
+  font-size: 18px;
+  font-weight: 600;
+}
+.menu__sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.menu__list {
+  list-style: none;
+  padding: 12px;
+  flex: 1;
+}
+.menu__item {
+  display: block;
+  width: 100%;
+  padding: 14px 12px;
+  border-radius: 10px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--foreground);
+  font-size: 16px;
+  font-weight: 600;
+}
+.menu__item[aria-current="page"] {
+  color: var(--primary);
+  background: var(--surface-tint);
+}
+.menu__logout {
+  margin: 0 24px;
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--muted-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.menu__logout:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* 녹음 중: 입력창 옆 마이크와 헤더의 "음성으로 설명하기" 버튼이 빨갛게 바뀌고 천천히 깜빡인다 */
-.mic.is-recording,
-.icon-btn.is-recording {
-  border-color: transparent;
-  background: #e5484d;
-  color: #ffffff;
-  animation: mic-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes mic-pulse {
-  50% {
-    box-shadow: 0 0 0 8px rgba(229, 72, 77, 0.18);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mic.is-recording,
-  .icon-btn.is-recording {
-    animation: none;
-  }
 }

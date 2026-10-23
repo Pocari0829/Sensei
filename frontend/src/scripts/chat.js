@@ -14,7 +14,6 @@ import { NICKNAME_PAGE } from "./auth.js";
 
 const phoneEl = document.querySelector(".phone");
 const dragHint = document.getElementById("drag-hint");
-const idleHeader = document.getElementById("idle-header");
 const topicHeader = document.getElementById("topic-header");
 const topicNameEl = document.getElementById("topic-name");
 const topicDisplay = document.getElementById("topic-display");
@@ -33,7 +32,6 @@ const newTopicBtn = document.getElementById("new-topic-btn");
 const easierBtn = document.getElementById("easier-btn");
 const dontKnowBtn = document.getElementById("dontknow-btn");
 const quizBtn = document.getElementById("quiz-btn");
-const greetingName = document.getElementById("greeting-name");
 
 let activeSession = null;
 let isSending = false;
@@ -148,7 +146,6 @@ function render() {
   phoneEl.classList.toggle("phone--tinted", hasMessages);
 
   dragHint.hidden = !hasMessages;
-  idleHeader.hidden = hasMessages;
   topicHeader.hidden = !hasMessages;
   emptyState.hidden = hasMessages;
   messageList.hidden = !hasMessages;
@@ -430,14 +427,9 @@ quizBtn.addEventListener("click", () => {
 
 // ─────────────────────────────────────────────
 // 닉네임: 아직 정하지 않았으면 이름 정하기 화면(nickname.html)에서 먼저 정하고 온다.
-// 정한 닉네임은 빈 화면 인사말에 넣고, 하쿠에게 질문할 때 같이 보내서
-// 하쿠가 그 이름으로 부르게 한다 (app.py 의 ask_haku).
+// 하쿠에게 질문할 때 같이 보내서 하쿠가 그 이름으로 부르게 한다 (app.py 의 ask_haku).
+// 빈 화면 인사말은 시안 문구 그대로 "안녕!" 고정이라 여기서는 쓰지 않는다.
 // ─────────────────────────────────────────────
-
-/** 빈 화면 인사말("안녕! 오늘은 뭘 가르쳐 줄 거야?")에도 닉네임을 넣는다. */
-function showGreetingName() {
-  greetingName.textContent = nickname ? ` ${nickname}` : "";
-}
 
 /** 닉네임을 불러온다. 아직 없으면 이름 정하기 화면으로 보내고 true 를 돌려준다. */
 async function loadNickname() {
@@ -453,7 +445,6 @@ async function loadNickname() {
     window.location.replace(NICKNAME_PAGE);
     return true;
   }
-  showGreetingName();
   return false;
 }
 
@@ -505,19 +496,3 @@ async function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
-
-// ─────────────────────────────────────────────
-// (추가) 말로 보내기 — 녹음과 마이크 버튼은 voice.js 에 있다.
-// 여기서는 채팅 화면의 요소와 함수만 넘겨서 연결한다.
-// ─────────────────────────────────────────────
-import { setupVoiceInput } from "./voice.js";
-
-setupVoiceInput({
-  sendBtn,
-  composerInput,
-  messageList,
-  headerMicBtn: idleHeader.querySelector('button[aria-label="음성으로 설명하기"]'),
-  systemAlert,
-  isSending: () => isSending,
-  sendMessage,
-});

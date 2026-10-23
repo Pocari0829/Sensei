@@ -7,8 +7,9 @@
     POST /judge-level    사용자의 대답 하나 → 어느 학교급 수준의 설명인지 (레벨 1~5)
 
 /ask-haku 로 메시지가 오면 아래 순서로 지나간다. 이 파일도 같은 순서로 적혀 있다.
-    1) check_before_haku()    정오 판별. 틀렸으면 여기서 "틀렸어요. ..." 로 바로 응답하고 끝난다.
-    2) ask_haku()             맞았을 때만 실행된다. 하쿠가 꼬리질문을 한다.
+    1) check_before_haku()    정오 판별. 결과는 g.check 에 담아 두기만 한다.
+    2) ask_haku()             맞든 틀리든 하쿠가 꼬리질문을 한다. (하쿠는 판정을 모른다)
+                              판정은 응답의 is_correct / feedback 으로 따로 보내고, 프론트가 "시스템 알림" 박스에 띄운다.
     3) replace_quota_error()  Gemini 사용량 초과였다면 긴 영어 오류를 짧은 안내 문구로 바꾼다.
 
 하쿠 / 정오 판별 / 문제 생성 / 수준 판단은 서로 다른 Gemini 호출이고, 각자의 프롬프트는 prompts.py 에 있다.
@@ -23,7 +24,7 @@ from typing import Literal
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from google import genai             
 from google.genai import types
 from flask_cors import CORS
@@ -48,7 +49,16 @@ client = genai.Client()
 HAKU_MODEL = os.getenv("HAKU_MODEL", "gemini-3-flash-preview")
 CHECK_MODEL = os.getenv("CHECK_MODEL", "gemini-3-flash-preview")
 # 문제 생성 전용 모델. .env 에 QUIZ_MODEL 이 없으면 CHECK_MODEL 을 같이 쓴다.
-QUIZ_MODEL = os.getenv("QUIZ_MODEL", CHECK_MODEL)
+# 쉼표로 여러 개를 적으면 앞에서부터 시도하고, 사용량 초과·혼잡·시간 초과면 다음 모델로 넘어간다.
+#   예) QUIZ_MODEL=gemini-3.5-flash,gemini-3.6-flash,gemini-3.1-flash-lite
+# 무료 사용량은 모델마다 따로라서, 여러 개를 적으면 한도를 합쳐 쓰는 효과가 난다.
+# 맨 뒤 모델은 "마지막 수단" 이다. 여러 개 중 맨 뒤 모델로 만들었으면 퀴즈 화면에 QUIZ_FALLBACK_NOTICE 를 띄운다.
+QUIZ_MODELS = [m.strip() for m in os.getenv("QUIZ_MODEL", CHECK_MODEL).split(",") if m.strip()]
+# 한 모델을 기다리는 최대 시간(ms). 앞의 모델들은 짧게 기다리고 다음 모델로 넘어간다.
+# 맨 뒤 모델은 넘어갈 곳이 없으므로 더 기다린다. 합쳐도 gunicorn 의 --timeout 120(초) 안에 끝나게 잡았다.
+QUIZ_MODEL_TIMEOUT_MS = 25_000
+QUIZ_LAST_MODEL_TIMEOUT_MS = 60_000
+QUIZ_FALLBACK_NOTICE = "오늘 사용량이 많아서 문제 품질이 조금 떨어질 수 있어요."
 # 문제 유형(빈칸 주관식 / 객관식) 고르기 전용 모델. 문제를 만드는 QUIZ_MODEL 보다 먼저 한 번 부른다.
 QUIZ_TYPE_MODEL = os.getenv("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
 # 대답 수준 판단 전용 모델. 메시지마다 불리고, 하쿠의 대답과 따로(기다리지 않고) 돈다.
@@ -70,7 +80,8 @@ LEVEL_MODEL = os.getenv("LEVEL_MODEL", "gemini-3.5-flash-lite")
 class CheckResult(BaseModel):
     is_correct: bool = Field(
         description="사용자의 설명에 사실과 다른 내용이 있으면 false. "
-        "틀린 내용이 없거나, 질문·모르겠다는 말·힌트 요청처럼 사실을 설명하는 말이 아니면 true."
+        "틀린 내용이 없거나, 질문·모르겠다는 말·힌트 요청처럼 사실을 설명하는 말이 아니거나, "
+        "맛·식감·느낌·비유·의견처럼 사람마다 다를 수 있는 말이면 true."
     )
     feedback: str = Field(
         description="is_correct 가 false 일 때 어디가 틀렸는지 짧게 짚는 한두 문장. 정답은 알려주지 않는다. true 면 빈 문자열."
@@ -87,7 +98,7 @@ class QuizItem(BaseModel):
 
 # 시험지 (문제 목록)
 class QuizResult(BaseModel):
-    items: list[QuizItem] = Field(description="문제는 딱 1개만 담는다.")
+    items: list[QuizItem] = Field(description="문제는 최대 1개. 낼 만한 내용이 없으면 억지로 만들지 말고 빈 목록.")
 
 
 # 객관식 문제 하나
@@ -99,7 +110,7 @@ class ChoiceItem(BaseModel):
 
 # 객관식 시험지 (문제 목록)
 class ChoiceResult(BaseModel):
-    items: list[ChoiceItem] = Field(description="문제는 딱 1개만 담는다.")
+    items: list[ChoiceItem] = Field(description="문제는 최대 1개. 낼 만한 내용이 없으면 억지로 만들지 말고 빈 목록.")
 
 
 # 문제 유형 고르기 결과 (generate_quiz 가 문제를 만들기 전에 QUIZ_TYPE_MODEL 에게 받는다)
@@ -129,12 +140,14 @@ class LevelResult(BaseModel):
 # ─────────────────────────────────────────────
 # 공통 도구 (세 주소가 같이 쓴다)
 # ─────────────────────────────────────────────
-def _history_to_contents(history):
+def _history_to_contents(history, include_system=False):
     """프론트가 보낸 대화 기록을 Gemini 의 Content 리스트로 바꾼다.
 
-    history 는 [{role: "user" | "sensei" | "check", text: "..."}, ...] 형태.
-    role 이 "sensei"(하쿠) 나 "check"(정오 판별의 "틀렸어요. ..." 알림) 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
-    "check" 를 사용자 말로 넘기면 Gemini 가 "사용자가 틀렸다고 말했다" 로 읽으므로, 지적한 쪽(모델)의 말로 넘긴다.
+    history 는 [{role: "user" | "sensei" | "system" | "check", text: "..."}, ...] 형태.
+    role 이 "sensei" 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
+    role 이 "system" 이면 정오 판별 알림이다. 기획서상 하쿠는 판정을 모르므로 기본으로는 뺀다.
+    include_system=True (문제 생성) 일 때만 "[시스템 알림] ..." 으로 붙여서 어느 설명이 틀렸는지 알게 한다.
+    "check" 는 예전 방식의 정오 판별 알림("틀렸어요.") 이라 "system" 과 똑같이 다룬다. (이미 저장된 대화용)
     형식이 이상한 항목은 조용히 건너뛴다 (프론트 버그 때문에 500 나면 안 되니까).
     """
     contents = []
@@ -149,7 +162,12 @@ def _history_to_contents(history):
         if not text or not str(text).strip():
             continue
 
-        role = "model" if turn.get("role") in ("sensei", "check") else "user"
+        if turn.get("role") in ("system", "check"):
+            if not include_system:
+                continue
+            text = f"[시스템 알림] {text}"
+
+        role = "model" if turn.get("role") == "sensei" else "user"
         contents.append(types.Content(role=role, parts=[types.Part(text=str(text))]))
 
     return contents
@@ -220,10 +238,8 @@ def _check(message, history):
 def check_before_haku():
     """/ask-haku 가 실행되기 "전에" 정오 판별을 먼저 한다.
 
-    - 틀렸으면: 하쿠 모델을 부르지 않고(틀린 설명에는 꼬리질문을 하지 않는다) 여기서 바로 응답을 돌려준다.
-      프론트(chat.js)는 is_correct=False 를 보고 하쿠 말풍선 대신 "틀렸어요." 알림 박스만 띄운다.
-      어디가 틀렸는지(feedback)는 화면에 보여주지 않고 system_corrections 기록에 남긴다.
-    - 맞았으면: None 을 돌려줘서 원래의 ask_haku() (SYSTEM_PROMPT) 가 그대로 실행된다.
+    - 판별 결과는 g.check 에 담아 두고 None 을 돌려준다. 맞든 틀리든 ask_haku() 가 그대로 실행된다.
+      (기획서: 하쿠는 판정을 모르고 꼬리질문을 계속한다. 판정은 시스템 알림 박스에 따로 뜬다)
     - 판별 자체가 실패하면(사용량 초과 등): ok=False 로 돌려줘서 "시스템 알림" 박스에 뜬다.
     """
     # CORS 사전 요청(OPTIONS) 이나 다른 주소는 건드리지 않는다.
@@ -245,22 +261,13 @@ def check_before_haku():
         busy = "정오 판별 서버가 지금 바빠요. 잠시 후 다시 보내주세요."
         return jsonify(ok=False, error=QUOTA_MESSAGE if _is_quota_error(e) else busy)
 
-    if result.is_correct:
-        return None
-
-    # 틀렸으면 판별 결과를 돌려준다. 하쿠는 부르지 않는다.
-    # chat.js 는 "틀렸어요." 알림 박스만 보여주고(대화 기록 haku_log 에는 role "check"), feedback 은 system_corrections 에 남긴다.
-    feedback = result.feedback or "방금 설명에 틀린 부분이 있어요."
-    return jsonify(
-        ok=True,
-        is_correct=False,
-        feedback=feedback,
-        question=f"틀렸어요. {feedback}",
-    )
+    # 하쿠에게는 넘기지 않는다. ask_haku() 가 응답을 만들 때 is_correct / feedback 으로만 붙인다.
+    g.check = result
+    return None
 
 
 # ─────────────────────────────────────────────
-# 2) 하쿠 꼬리질문: 정오 판별을 통과했을 때만 실행된다
+# 2) 하쿠 꼬리질문: 정오 판별 결과와 상관없이 실행된다
 # ─────────────────────────────────────────────
 @app.post("/ask-haku")
 def ask_haku():
@@ -280,6 +287,11 @@ def ask_haku():
     system_instruction = prompts.SYSTEM_PROMPT
     if nickname:
         system_instruction += prompts.NICKNAME_PROMPT.format(nickname=nickname)
+
+    # 사용자 수준 1~5 (선택). 설문의 level_init / 이후 level_current. 범위 밖이거나 숫자가 아니면 무시한다.
+    level = data.get("level")
+    if isinstance(level, int) and 1 <= level <= 5:
+        system_instruction += prompts.LEVEL_PROMPT.format(level=level)
 
     # message 가 비어 있으면 Gemini 호출 자체가 400 으로 터진다.
     # 여기서 미리 걸러서 프론트가 읽을 수 있는 형태로 돌려준다.
@@ -309,7 +321,13 @@ def ask_haku():
         return jsonify(ok=False, error=f"하쿠가 응답하지 못했어요: {e}"), 500
 
     # res.text 가 실제 하쿠의 문장이다.
-    return jsonify(ok=True, question=res.text)
+    # 정오 판별 결과(check_before_haku 가 g.check 에 담음)는 하쿠의 말과 따로 보낸다.
+    # 틀렸으면 chat.js 가 feedback 을 하쿠 말풍선이 아니라 "시스템 알림" 박스로 띄운다.
+    check = g.get("check")
+    if check is not None and not check.is_correct:
+        feedback = check.feedback or "방금 설명에 틀린 부분이 있어요."
+        return jsonify(ok=True, question=res.text, is_correct=False, feedback=feedback)
+    return jsonify(ok=True, question=res.text, is_correct=True)
 
 
 # ─────────────────────────────────────────────
@@ -436,7 +454,7 @@ def _choose_quiz_type(history, previous):
     문제를 만드는 호출과 나눈 이유: 유형 고르기 프롬프트(CHOOSE_QUIZ_TYPE)와 문제 프롬프트를 따로 다듬으려고.
     고르기에 실패해도(혼잡, 사용량 초과 등) 퀴즈가 막히지 않게, 이미 낸 문제 중 더 적게 나온 유형으로 정한다.
     """
-    contents = _history_to_contents(history)
+    contents = _history_to_contents(history, include_system=True)
     request_text = "지금까지 대화로 다음 시험 문제의 유형을 골라줘."
     if previous:
         request_text += "\n아래는 이미 낸 문제야. ([ ] 안은 그 문제의 유형)\n" + "\n".join(
@@ -465,6 +483,46 @@ def _choose_quiz_type(history, previous):
     return result.type
 
 
+def _generate_quiz(contents, prompt, schema):
+    """QUIZ_MODELS 를 앞에서부터 시도해서 문제를 만든다. 돌려주는 것: (결과, 맨 뒤 모델로 만들었는지).
+
+    한 모델이 실패하면(사용량 초과, 혼잡, 시간 초과, 응답이 깨짐 등) 기다리지 않고 바로 다음 모델로 넘어간다.
+    모델이 하나뿐이면 예전처럼 혼잡할 때 잠깐 기다렸다가 다시 시도한다. 모두 실패하면 마지막 오류를 그대로 올린다.
+    """
+    if len(QUIZ_MODELS) == 1:
+        res = _generate_with_retry(
+            model=QUIZ_MODELS[0],
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=prompt,
+                response_mime_type="application/json",
+                response_schema=schema,
+                http_options=types.HttpOptions(timeout=QUIZ_LAST_MODEL_TIMEOUT_MS),
+            ),
+        )
+        return _parse(res, schema), False
+
+    last = len(QUIZ_MODELS) - 1
+    for i, model in enumerate(QUIZ_MODELS):
+        timeout = QUIZ_LAST_MODEL_TIMEOUT_MS if i == last else QUIZ_MODEL_TIMEOUT_MS
+        try:
+            res = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=prompt,
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                    http_options=types.HttpOptions(timeout=timeout),
+                ),
+            )
+            return _parse(res, schema), i == last
+        except Exception as e:
+            if i == last:
+                raise
+            app.logger.warning("문제 생성 모델 %s 실패, 다음 모델로 넘어감: %s", model, str(e)[:200])
+
+
 @app.post("/generate-quiz")
 def generate_quiz():
     """지금까지의 대화로 시험지 문제를 하나 만든다. [퀴즈 풀기] 를 눌렀을 때 호출된다.
@@ -472,15 +530,16 @@ def generate_quiz():
     받는 것:     {history, previous?, type?}  (previous = 이미 낸 문제의 지문들)
         type 을 안 보내면(지금의 quiz.js) 두 단계로 만든다.
           ① _choose_quiz_type(): QUIZ_TYPE_MODEL 이 대화 내용을 보고 빈칸 주관식 / 객관식 중 더 맞는 유형을 고른다.
-          ② QUIZ_MODEL 이 고른 유형의 프롬프트(GENERATE_QUIZ / GENERATE_CHOICE_QUIZ)로 문제를 만든다.
+          ② QUIZ_MODELS 가 (앞에서부터 차례로) 고른 유형의 프롬프트(GENERATE_QUIZ / GENERATE_CHOICE_QUIZ)로 문제를 만든다.
         type 에 "blank" | "choice" 를 보내면 ① 없이 그 유형으로만 만든다. (예전 방식. 옛 화면이 보내도 동작하게 남겨 둔다)
     돌려주는 것: {ok: true, items: [{type, question: "...", answers: ["...", ...], choices?: [...]}]}  (문제는 최대 1개)
         type 이 "choice"(객관식)면 choices 에 보기들이 오고, answers 에는 정답 보기 1개만 담긴다.
         대화에 문제로 낼 내용이 없으면 items 가 빈 목록이고, Gemini 가 깨진 문제를 주면 ok: false 다.
+        맨 뒤(마지막 수단) 모델로 만들었으면 notice 에 QUIZ_FALLBACK_NOTICE 가 같이 온다.
     """
     data = request.get_json(silent=True) or {}
     history = data.get("history", [])
-    contents = _history_to_contents(history)
+    contents = _history_to_contents(history, include_system=True)
 
     if not contents:
         return jsonify(ok=False, error="대화 기록이 없어서 문제를 만들 수 없어요."), 400
@@ -514,23 +573,17 @@ def generate_quiz():
         prompt, schema = prompts.GENERATE_QUIZ, QuizResult
 
     try:
-        res = _generate_with_retry(
-            model=QUIZ_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=prompt,
-                response_mime_type="application/json",
-                response_schema=schema,
-            ),
-        )
-        result = _parse(res, schema)
+        result, used_fallback = _generate_quiz(contents, prompt, schema)
     except Exception as e:
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e}"), 500
+
+    # 마지막 수단 모델로 만들었으면 퀴즈 화면에 안내 문구를 같이 띄운다.
+    notice = {"notice": QUIZ_FALLBACK_NOTICE} if used_fallback else {}
 
     # 시험지는 한 문제만 낸다. Gemini 가 여러 개를 줘도 첫 번째만 쓴다.
     # 대화에 문제로 낼 내용이 없어서 빈 목록이 오면 그대로 돌려준다. (quiz.js 가 안내 문구를 띄운다)
     if not result.items:
-        return jsonify(ok=True, items=[])
+        return jsonify(ok=True, items=[], **notice)
     item = result.items[0]
 
     try:
@@ -546,7 +599,7 @@ def generate_quiz():
         app.logger.warning("쓸 수 없는 문제라서 버림: %s %r", e, item)
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e} 새로고침하면 다시 만들어요."), 500
 
-    return jsonify(ok=True, items=[quiz_item])
+    return jsonify(ok=True, items=[quiz_item], **notice)
 
 
 # 레벨의 범위. 프론트(user.js)의 LEVEL_MIN / LEVEL_MAX 와 같은 값.

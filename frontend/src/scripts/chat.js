@@ -38,6 +38,29 @@ const greetingName = document.getElementById("greeting-name");
 let activeSession = null;
 let isSending = false;
 
+// [더 쉽게] / [모르겠어] 버튼이 보내는 말. 사용자가 직접 한 설명이 아니므로 설명 횟수에서 뺀다.
+const EASIER_MESSAGE = "방금 질문을 더 쉽게 다시 물어봐줄래?";
+const DONT_KNOW_MESSAGE = "음... 모르겠어. 힌트를 줄 수 있어?";
+
+// 직접 설명을 이만큼 해야 [퀴즈 풀기] 를 누를 수 있다. (기획서 예상 문제점 ③: 설명이 거의 없으면 낼 문제가 없다)
+const MIN_EXPLANATIONS_FOR_QUIZ = 3;
+
+/** 세션에서 사용자가 직접 한 설명의 수. 버튼으로 보낸 말은 세지 않는다. */
+function countExplanations(session) {
+  return (session?.messages ?? []).filter(
+    (m) => m.role === "user" && m.text !== EASIER_MESSAGE && m.text !== DONT_KNOW_MESSAGE,
+  ).length;
+}
+
+/** 설명 횟수에 맞춰 [퀴즈 풀기] 를 켜고 끈다. 모자라면 버튼에 "퀴즈 풀기 1/3" 처럼 진행 정도를 보여준다. */
+function updateQuizBtn() {
+  const count = countExplanations(activeSession);
+  const ready = count >= MIN_EXPLANATIONS_FOR_QUIZ;
+  quizBtn.disabled = !ready;
+  quizBtn.textContent = ready ? "퀴즈 풀기" : `퀴즈 풀기 ${count}/${MIN_EXPLANATIONS_FOR_QUIZ}`;
+  quizBtn.title = ready ? "" : `하쿠에게 ${MIN_EXPLANATIONS_FOR_QUIZ}번 이상 설명하면 퀴즈를 풀 수 있어요.`;
+}
+
 // 하쿠가 부르는 이름. DB(users.nickname)에서 불러오고, 하쿠에게 질문할 때 같이 보낸다.
 let nickname = null;
 
@@ -80,16 +103,26 @@ function systemAlert(text) {
     </div>`;
 }
 
-// 정오 판별에서 틀렸을 때 보여주는 말. 어디가 틀렸는지 설명은 화면에 보여주지 않고
-// (사용자가 스스로 다시 생각하게) system_corrections 기록에만 남긴다.
-const WRONG_TEXT = "틀렸어요.";
-
-/** 정오 판별에서 틀렸을 때의 "틀렸어요." 알림 박스. 하쿠의 말이 아니라서 말풍선과 따로 그린다. */
-function checkAlert() {
+/** 정오 판별에서 틀렸을 때의 알림 박스. 하쿠 말풍선, 보통 시스템 알림(보라)과 구분되게 빨간색이다. */
+function wrongAlert(text) {
   return `
     <div class="system system--wrong" aria-label="정오 판별">
-      <p class="system__text">${WRONG_TEXT}</p>
+      <p class="system__title">시스템 알림</p>
+      <p class="system__text">${escapeHtml(text)}</p>
     </div>`;
+}
+
+/**
+ * 저장된 메시지 하나를 화면에 그린다.
+ *   user   → 사용자 말풍선
+ *   system → 정오 판별 알림 (어디가 틀렸는지 짚는 빨간 박스)
+ *   check  → 예전 방식의 정오 판별 알림 ("틀렸어요." 만 저장된 대화). system 과 똑같이 그린다.
+ *   sensei → 하쿠 말풍선
+ */
+function renderMessage(m) {
+  if (m.role === "user") return bubbleRowUser(m.text);
+  if (m.role === "system" || m.role === "check") return wrongAlert(m.text);
+  return bubbleRowSensei(m.text);
 }
 
 /** 말풍선 목록 맨 아래에 "시스템 알림" 을 붙인다. 아직 대화가 없는 빈 화면이어도 보이게 한다. */
@@ -120,19 +153,14 @@ function render() {
   emptyState.hidden = hasMessages;
   messageList.hidden = !hasMessages;
   quickActions.hidden = !hasMessages;
+  updateQuizBtn();
 
   if (!hasMessages) return;
 
   topicNameEl.textContent = activeSession.topic || "학습 중";
   messageList.innerHTML =
     `<p class="day-divider">오늘</p>` +
-    messages
-      .map((m) => {
-        if (m.role === "user") return bubbleRowUser(m.text);
-        if (m.role === "check") return checkAlert();
-        return bubbleRowSensei(m.text);
-      })
-      .join("");
+    messages.map(renderMessage).join("");
   messageList.scrollTop = messageList.scrollHeight;
 }
 
@@ -247,26 +275,30 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
   document.getElementById("typing-row")?.remove();
 
   if (result.ok) {
-    // 정오 판별에서 틀렸으면 하쿠는 대답하지 않는다(꼬리질문 없음).
-    // 하쿠 말풍선 대신 "틀렸어요." 알림 박스만 보여주고, 대화 기록에는 role "check" 로 남긴다.
-    // (기록에 남겨야 다음 질문과 퀴즈를 만들 때 Gemini 가 이 설명이 틀렸다는 걸 안다)
+    // 정오 판별에서 틀렸으면, 하쿠의 대답 앞에 "시스템 알림" 을 끼워 넣는다. (사용자 말 → 알림 → 하쿠 순서)
+    // 아래 addMessage 가 대화 전체를 저장하므로 여기서는 붙이기만 한다.
+    // 하쿠에게 보내는 대화 기록에서는 백엔드가 이 알림을 뺀다. (하쿠는 판정을 모른다)
     const isWrong = result.is_correct === false;
+    if (isWrong) {
+      session.messages.push({ role: "system", text: result.feedback, ts: Date.now() });
+    }
+
     let saveError = null;
     try {
-      await store.addMessage(session, isWrong ? "check" : "sensei", isWrong ? WRONG_TEXT : result.question);
+      await store.addMessage(session, "sensei", result.question);
     } catch (err) {
       saveError = err;
     }
 
     if (session === activeSession) {
       render();
-      if (!isWrong) typeLastSenseiBubble();
+      typeLastSenseiBubble();
       if (saveError) {
         showAlert(`방금 대답을 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${saveError.message})`);
       }
     }
 
-    // 틀린 설명과 모르는 개념도 따로 기록해 둔다. (화면에는 영향 없음)
+    // 정오 판별에서 틀렸으면 DB 에도 따로 기록해 둔다. (system_corrections, gap_records)
     if (isWrong) {
       recordWrongAnswer(session, text, result.feedback);
     }
@@ -384,12 +416,12 @@ easierBtn.addEventListener("click", () => {
   }
   // 내 수준(users.level_current)도 한 단계 내린다. 저장을 기다리지 않고 바로 하쿠에게 보낸다.
   lowerLevel().catch((err) => console.warn("수준을 낮추지 못했어요:", err));
-  sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?", { skipLevel: true });
+  sendMessage(EASIER_MESSAGE, { skipLevel: true });
 });
-dontKnowBtn.addEventListener("click", () => sendMessage("음... 모르겠어. 힌트를 줄 수 있어?", { skipLevel: true }));
+dontKnowBtn.addEventListener("click", () => sendMessage(DONT_KNOW_MESSAGE, { skipLevel: true }));
 
 quizBtn.addEventListener("click", () => {
-  if (!activeSession) return;
+  if (!activeSession || countExplanations(activeSession) < MIN_EXPLANATIONS_FOR_QUIZ) return;
   // 퀴즈 화면이 어느 세션으로 문제를 낼지 알 수 있게 세션 id 를 같이 넘긴다.
   const params = new URLSearchParams({ session: activeSession.id });
   if (activeSession.topic) params.set("topic", activeSession.topic);
@@ -447,7 +479,14 @@ async function loadSession() {
   render();
 }
 
+// 퀴즈 화면이 "낼 문제가 없다" 며 돌려보낼 때 주소에 붙이는 값 (quiz.js) 과 그때 띄울 알림.
+const QUIZ_NOTICES = {
+  "need-more": "아직 문제를 만들 수 없어요. 조금만 더 하쿠와 대화해 주세요.",
+};
+
 async function init() {
+  // 주소의 ?notice= 는 세션을 불러오면서 주소가 바뀌기 전에 먼저 읽어 둔다.
+  const quizNotice = QUIZ_NOTICES[new URLSearchParams(window.location.search).get("notice")];
   render();
 
   // 불러오는 동안 입력을 막는다.
@@ -460,6 +499,9 @@ async function init() {
     setSending(false);
     composerInput.focus();
   }
+
+  // 알림은 저장하지 않는다. loadSession() 이 주소를 ?session= 만 남기고 바꾸므로 새로고침하면 다시 뜨지 않는다.
+  if (quizNotice) showAlert(quizNotice);
 }
 
 document.addEventListener("DOMContentLoaded", init);

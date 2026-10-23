@@ -32,7 +32,11 @@ from dotenv import dotenv_values
 # 이 파일 옆의 frontend 폴더를 보여준다. 어느 폴더에서 실행해도 같다.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+# .env 는 프로젝트 맨 위에 두는 것이 기본이다. 없으면 backend/.env 를 읽는다.
+# (백엔드의 load_dotenv() 는 두 곳 모두에서 찾기 때문에, backend 안에만 두는 경우도 있어서)
 ENV_PATH = os.path.join(BASE_DIR, ".env")
+if not os.path.exists(ENV_PATH):
+    ENV_PATH = os.path.join(BASE_DIR, "backend", ".env")
 
 CONFIG_JS_PATH = "/src/scripts/config.js"
 

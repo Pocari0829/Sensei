@@ -1,22 +1,25 @@
 """Sensei 백엔드 (Flask + Gemini).
 
-주소는 3개다.
-    POST /ask-haku       사용자의 설명 → 하쿠의 꼬리질문 (정오 판별을 먼저 거친다)
+주소는 5개다.
+    POST /ask-haku       사용자의 설명 → 하쿠의 꼬리질문 + 정오 판별 (둘을 동시에 부른다)
     POST /check-system   정오 판별만 따로
     POST /generate-quiz  지금까지의 대화 → 문제 1개 (빈칸 또는 객관식)
+    POST /grade-quiz     빈칸 주관식 답 → 맞았는지 (표기만 다른 답도 정답으로)
+    POST /judge-level    사용자의 대답 하나 → 어느 학교급 수준의 설명인지 (레벨 1~5)
 
 /ask-haku 로 메시지가 오면 아래 순서로 지나간다. 이 파일도 같은 순서로 적혀 있다.
-    1) check_before_haku()    정오 판별. 틀렸으면 여기서 "틀렸어요. ..." 로 바로 응답하고 끝난다.
-    2) ask_haku()             맞았을 때만 실행된다. 하쿠가 꼬리질문을 한다.
-    3) replace_quota_error()  Gemini 사용량 초과였다면 긴 영어 오류를 짧은 안내 문구로 바꾼다.
+    1) ask_haku()             정오 판별(_check)과 하쿠의 꼬리질문을 동시에 부른다. (하쿠는 판정을 모르므로 기다릴 필요가 없다)
+                              판정은 응답의 is_correct / feedback 으로 따로 보내고, 프론트가 "시스템 알림" 박스에 띄운다.
+    2) replace_quota_error()  Gemini 사용량 초과였다면 긴 영어 오류를 짧은 안내 문구로 바꾼다.
 
-하쿠 / 정오 판별 / 문제 생성은 서로 다른 Gemini 호출이고, 각자의 프롬프트는 prompts.py 에 있다.
+하쿠 / 정오 판별 / 문제 생성 / 수준 판단은 서로 다른 Gemini 호출이고, 각자의 프롬프트는 prompts.py 에 있다.
 """
 
 import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -44,14 +47,39 @@ client = genai.Client()
 
 # 이쪽은 getenv + 기본값. .env 에 없어도 일단 돌아가야 하므로.
 # 모델명은 자주 바뀌니 코드에 박지 말고 .env 에서만 관리한다.
-HAKU_MODEL = os.getenv("HAKU_MODEL", "gemini-3-flash-preview")
-CHECK_MODEL = os.getenv("CHECK_MODEL", "gemini-3-flash-preview")
-# 문제 생성 전용 모델. .env 에 QUIZ_MODEL 이 없으면 CHECK_MODEL 을 같이 쓴다.
-QUIZ_MODEL = os.getenv("QUIZ_MODEL", CHECK_MODEL)
+
+
+def _model_list(name, default):
+    """.env 의 모델 설정을 목록으로 읽는다. 쉼표로 여러 개를 적으면 앞에서부터 시도한다. (_generate_with_models)"""
+    return [m.strip() for m in os.getenv(name, default).split(",") if m.strip()]
+
+
+# 아래 설정들은 쉼표로 여러 모델을 적을 수 있다. 앞에서부터 시도하고, 사용량 초과·혼잡·시간 초과면 다음 모델로 넘어간다.
+# 무료 사용량은 모델마다 따로라서, 여러 개를 적으면 한도를 합쳐 쓰는 효과가 난다.
+# 하쿠 꼬리질문. 예) HAKU_MODEL=gemini-3.5-flash-lite,gemini-3.1-flash-lite
+HAKU_MODELS = _model_list("HAKU_MODEL", "gemini-3-flash-preview")
+# 정오 판별. 예) CHECK_MODEL=gemini-3.5-flash-lite,gemini-3.1-flash-lite
+CHECK_MODELS = _model_list("CHECK_MODEL", "gemini-3-flash-preview")
+# 문제 생성. .env 에 QUIZ_MODEL 이 없으면 정오 판별과 같은 모델을 쓴다.
+#   예) QUIZ_MODEL=gemini-3.5-flash,gemini-3.6-flash,gemini-3.1-flash-lite
+# 맨 뒤 모델은 "마지막 수단" 이다. 여러 개 중 맨 뒤 모델로 만들었으면 퀴즈 화면에 QUIZ_FALLBACK_NOTICE 를 띄운다.
+QUIZ_MODELS = _model_list("QUIZ_MODEL", ",".join(CHECK_MODELS))
+# 빈칸 주관식 채점. .env 에 GRADE_MODEL 이 없으면 문제 생성과 같은 모델을 쓴다.
+#   예) GRADE_MODEL=gemini-3.5-flash,gemini-3.1-flash-lite
+GRADE_MODELS = _model_list("GRADE_MODEL", ",".join(QUIZ_MODELS))
+# 한 모델을 기다리는 최대 시간(ms). 앞의 모델들은 짧게 기다리고 다음 모델로 넘어간다.
+# 맨 뒤 모델은 넘어갈 곳이 없으므로 더 기다린다. 합쳐도 gunicorn 의 --timeout 120(초) 안에 끝나게 잡았다.
+MODEL_TIMEOUT_MS = 25_000
+LAST_MODEL_TIMEOUT_MS = 60_000
+QUIZ_FALLBACK_NOTICE = "오늘 사용량이 많아서 문제 품질이 조금 떨어질 수 있어요."
 # 문제 유형(빈칸 주관식 / 객관식) 고르기 전용 모델. 문제를 만드는 QUIZ_MODEL 보다 먼저 한 번 부른다.
 QUIZ_TYPE_MODEL = os.getenv("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
+# 대답 수준 판단 전용 모델. 메시지마다 불리고, 하쿠의 대답과 따로(기다리지 않고) 돈다.
+# 판단 결과는 채팅 화면이 저장하므로, 화면을 옮기기 전에 끝나야 기록된다. 그래서 빠른 모델을 쓴다.
+# (3.1-flash-lite 는 하루 한도를 따로 쓰지만 가끔 1분 넘게 걸려서, 그사이 화면을 옮기면 기록이 사라졌다)
+LEVEL_MODEL = os.getenv("LEVEL_MODEL", "gemini-3.5-flash-lite")
 # 정리:  HAKU_MODEL = 하쿠 꼬리질문 / CHECK_MODEL = 정오 판별 / QUIZ_MODEL = 문제 생성
-#        QUIZ_TYPE_MODEL = 문제 유형 고르기
+#        QUIZ_TYPE_MODEL = 문제 유형 고르기 / GRADE_MODEL = 빈칸 주관식 채점 / LEVEL_MODEL = 대답 수준 판단
 # 무료 사용량은 모델마다 따로 계산되므로, 서로 다른 모델로 두면 하루에 더 많이 쓸 수 있다.
 
 
@@ -65,7 +93,8 @@ QUIZ_TYPE_MODEL = os.getenv("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
 class CheckResult(BaseModel):
     is_correct: bool = Field(
         description="사용자의 설명에 사실과 다른 내용이 있으면 false. "
-        "틀린 내용이 없거나, 질문·모르겠다는 말·힌트 요청처럼 사실을 설명하는 말이 아니면 true."
+        "틀린 내용이 없거나, 질문·모르겠다는 말·힌트 요청처럼 사실을 설명하는 말이 아니거나, "
+        "맛·식감·느낌·비유·의견처럼 사람마다 다를 수 있는 말이면 true."
     )
     feedback: str = Field(
         description="is_correct 가 false 일 때 어디가 틀렸는지 짧게 짚는 한두 문장. 정답은 알려주지 않는다. true 면 빈 문자열."
@@ -82,7 +111,7 @@ class QuizItem(BaseModel):
 
 # 시험지 (문제 목록)
 class QuizResult(BaseModel):
-    items: list[QuizItem] = Field(description="문제는 딱 1개만 담는다.")
+    items: list[QuizItem] = Field(description="문제는 1개. 대화에 학습 내용이 전혀 없을 때만 빈 목록.")
 
 
 # 객관식 문제 하나
@@ -94,7 +123,18 @@ class ChoiceItem(BaseModel):
 
 # 객관식 시험지 (문제 목록)
 class ChoiceResult(BaseModel):
-    items: list[ChoiceItem] = Field(description="문제는 딱 1개만 담는다.")
+    items: list[ChoiceItem] = Field(description="문제는 1개. 대화에 학습 내용이 전혀 없을 때만 빈 목록.")
+
+
+# 빈칸 주관식 채점 결과 (grade_quiz). 이유(reason)를 먼저 쓰게 해서 따져 본 뒤에 맞았는지 정하게 한다.
+class GradeItem(BaseModel):
+    index: int = Field(description="받은 문제 번호 그대로.")
+    reason: str = Field(description="맞았는지 판단한 이유. 짧은 한 문장.")
+    is_correct: bool = Field(description="사용자의 답이 정답과 뜻이 같으면 true.")
+
+
+class GradeResult(BaseModel):
+    results: list[GradeItem] = Field(description="받은 문제마다 하나씩.")
 
 
 # 문제 유형 고르기 결과 (generate_quiz 가 문제를 만들기 전에 QUIZ_TYPE_MODEL 에게 받는다)
@@ -107,15 +147,31 @@ class QuizTypeResult(BaseModel):
     )
 
 
+# 대답 수준 판단 결과 (judge_level 이 LEVEL_MODEL 에게 받는다)
+# 레벨은 users 의 레벨과 같은 단계: 1 초등 저학년 / 2 초등 고학년 / 3 중학생 / 4 고등학생 / 5 대학생 이상
+# 유형 고르기와 같은 이유로 근거(reason)를 먼저 쓰게 한다.
+class LevelResult(BaseModel):
+    reason: str = Field(description="이 수준으로 판단한 근거. 대답에 쓴 용어와 설명의 깊이를 근거로 짧은 한 문장.")
+    is_explanation: bool = Field(
+        description="설명이면 짧아도 true. 질문, 모르겠다는 말, 힌트 요청, 인사, 맞장구처럼 설명이 아니거나, "
+        "색·이름·숫자처럼 한 단어로 답하는 질문에 그 답만 한 경우라 수준을 알 수 없으면 false."
+    )
+    level: int = Field(
+        description="1 초등학교 저학년, 2 초등학교 고학년, 3 중학생, 4 고등학생, 5 대학생 이상. 1~5 중 하나."
+    )
+
+
 # ─────────────────────────────────────────────
 # 공통 도구 (세 주소가 같이 쓴다)
 # ─────────────────────────────────────────────
-def _history_to_contents(history):
+def _history_to_contents(history, include_system=False):
     """프론트가 보낸 대화 기록을 Gemini 의 Content 리스트로 바꾼다.
 
-    history 는 [{role: "user" | "sensei" | "check", text: "..."}, ...] 형태.
-    role 이 "sensei"(하쿠) 나 "check"(정오 판별의 "틀렸어요. ..." 알림) 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
-    "check" 를 사용자 말로 넘기면 Gemini 가 "사용자가 틀렸다고 말했다" 로 읽으므로, 지적한 쪽(모델)의 말로 넘긴다.
+    history 는 [{role: "user" | "sensei" | "system" | "check", text: "..."}, ...] 형태.
+    role 이 "sensei" 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
+    role 이 "system" 이면 정오 판별 알림이다. 기획서상 하쿠는 판정을 모르므로 기본으로는 뺀다.
+    include_system=True (문제 생성) 일 때만 "[시스템 알림] ..." 으로 붙여서 어느 설명이 틀렸는지 알게 한다.
+    "check" 는 예전 방식의 정오 판별 알림("틀렸어요.") 이라 "system" 과 똑같이 다룬다. (이미 저장된 대화용)
     형식이 이상한 항목은 조용히 건너뛴다 (프론트 버그 때문에 500 나면 안 되니까).
     """
     contents = []
@@ -130,7 +186,12 @@ def _history_to_contents(history):
         if not text or not str(text).strip():
             continue
 
-        role = "model" if turn.get("role") in ("sensei", "check") else "user"
+        if turn.get("role") in ("system", "check"):
+            if not include_system:
+                continue
+            text = f"[시스템 알림] {text}"
+
+        role = "model" if turn.get("role") == "sensei" else "user"
         contents.append(types.Content(role=role, parts=[types.Part(text=str(text))]))
 
     return contents
@@ -163,6 +224,57 @@ def _generate_with_retry(attempts=3, **kwargs):
             time.sleep(2 * (attempt + 1))
 
 
+# 하루 사용량을 다 쓴 모델 → 이 시각(time.time())까지는 건너뛴다. 서버를 다시 켜면 비워진다.
+# 하루 한도는 미국 서부 시간 자정에 풀리는데 정확한 시각을 따지지 않고, 한 시간마다 한 번씩만 다시 확인한다.
+_day_exhausted_until = {}
+DAY_EXHAUSTED_SKIP_SECONDS = 60 * 60
+
+
+def _generate_with_models(models, contents, prompt, schema=None, temperature=None):
+    """models 를 앞에서부터 시도해서 schema 모양의 답을 받는다. 돌려주는 것: (결과, 맨 뒤 모델로 받았는지).
+    schema 가 None 이면 JSON 이 아니라 그냥 글(res.text)을 받는다. (하쿠)
+
+    한 모델이 실패하면(사용량 초과, 혼잡, 시간 초과, 응답이 깨짐 등) 기다리지 않고 바로 다음 모델로 넘어간다.
+    맨 뒤 모델(하나뿐이면 그 모델)은 혼잡할 때 잠깐 기다렸다가 한 번 더 시도한다. 모두 실패하면 마지막 오류를 그대로 올린다.
+    하쿠(HAKU_MODELS), 정오 판별(CHECK_MODELS), 문제 생성(QUIZ_MODELS), 채점(GRADE_MODELS) 이 쓴다.
+    """
+    def config(timeout):
+        json_only = {"response_mime_type": "application/json", "response_schema": schema} if schema else {}
+        return types.GenerateContentConfig(
+            system_instruction=prompt,
+            temperature=temperature,
+            http_options=types.HttpOptions(timeout=timeout),
+            **json_only,
+        )
+
+    def parse(res):
+        return _parse(res, schema) if schema else res.text
+
+    # 오늘 사용량을 다 쓴 모델은 한동안 건너뛴다. (부를 때마다 0.5초씩 버리고 실패하므로)
+    # 단, 맨 뒤 모델은 넘어갈 곳이 없으므로 건너뛰지 않는다.
+    now = time.time()
+    tries = [m for m in models[:-1] if _day_exhausted_until.get(m, 0) <= now] + models[-1:]
+
+    for i, model in enumerate(tries):
+        is_last = i == len(tries) - 1
+        try:
+            if is_last:
+                # 맨 뒤 모델은 잠깐 혼잡(503)하면 조금 기다렸다가 한 번 더 시도한다.
+                res = _generate_with_retry(
+                    attempts=2, model=model, contents=contents, config=config(LAST_MODEL_TIMEOUT_MS)
+                )
+            else:
+                res = client.models.generate_content(model=model, contents=contents, config=config(MODEL_TIMEOUT_MS))
+            return parse(res), is_last and len(models) > 1
+        except Exception as e:
+            if "PerDay" in str(e):
+                _day_exhausted_until[model] = time.time() + DAY_EXHAUSTED_SKIP_SECONDS
+            if is_last:
+                app.logger.warning("모델 %s 도 실패 (더 넘어갈 모델 없음): %s", model, str(e)[:300])
+                raise
+            app.logger.warning("모델 %s 실패, 다음 모델로 넘어감: %s", model, str(e)[:200])
+
+
 # Gemini 무료 사용량을 다 썼을 때 화면에 보여줄 문구.
 QUOTA_MESSAGE = "오늘 Gemini 무료 사용량이 초과됐어요. (한도는 모델마다 따로) 내일 다시 시도하거나 .env 에서 모델을 바꿔주세요."
 
@@ -174,7 +286,7 @@ def _is_quota_error(e):
 
 
 # ─────────────────────────────────────────────
-# 1) 정오 판별: /ask-haku 로 온 메시지는 여기를 가장 먼저 지난다
+# 정오 판별: ask_haku() 가 하쿠와 동시에 부른다
 # ─────────────────────────────────────────────
 def _check(message, history):
     """정오 판별. 구조는 ask_haku 와 같고 프롬프트 / 모델 / 응답 형식만 다르다.
@@ -185,63 +297,31 @@ def _check(message, history):
     contents = _history_to_contents(history)
     contents.append(types.Content(role="user", parts=[types.Part(text=str(message))]))
 
-    res = _generate_with_retry(
-        model=CHECK_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=prompts.ASK_HAKU,  # prompts.py 의 정오 판별 프롬프트
-            response_mime_type="application/json",
-            response_schema=CheckResult,
-        ),
-    )
-    return _parse(res, CheckResult)
+    # CHECK_MODELS 를 앞에서부터 시도한다. (앞 모델이 분당 한도에 걸리면 다음 모델로)
+    # temperature=0: 같은 설명에 매번 같은 판정이 나오도록 무작위성을 끈다. (켜 두면 같은 문장도 가끔 통과됐다)
+    result, _ = _generate_with_models(CHECK_MODELS, contents, prompts.ASK_HAKU, CheckResult, temperature=0)
+    return result
 
 
-@app.before_request
-def check_before_haku():
-    """/ask-haku 가 실행되기 "전에" 정오 판별을 먼저 한다.
+# 하쿠가 호칭을 부른 뒤, 이만큼의 대답 동안은 다시 부르지 않는다. (4 = 다섯 번에 한 번쯤)
+NICKNAME_COOLDOWN = 4
 
-    - 틀렸으면: 하쿠 모델을 부르지 않고(틀린 설명에는 꼬리질문을 하지 않는다) 여기서 바로 응답을 돌려준다.
-      프론트(chat.js)는 is_correct=False 를 보고 하쿠 말풍선 대신 "틀렸어요." 알림 박스만 띄운다.
-      어디가 틀렸는지(feedback)는 화면에 보여주지 않고 system_corrections 기록에 남긴다.
-    - 맞았으면: None 을 돌려줘서 원래의 ask_haku() (SYSTEM_PROMPT) 가 그대로 실행된다.
-    - 판별 자체가 실패하면(사용량 초과 등): ok=False 로 돌려줘서 "시스템 알림" 박스에 뜬다.
-    """
-    # CORS 사전 요청(OPTIONS) 이나 다른 주소는 건드리지 않는다.
-    if request.method != "POST" or request.path != "/ask-haku":
-        return None
 
-    data = request.get_json(silent=True) or {}
-    message = data.get("message")
+def _called_recently(history, nickname):
+    """하쿠의 최근 NICKNAME_COOLDOWN 개 대답에 사용자의 호칭(닉네임 또는 "선생님")이 있었는지."""
+    if not isinstance(history, list):
+        return False
+    names = [n for n in (nickname, "선생님") if n]
+    haku_texts = [str(t.get("text") or "") for t in history if isinstance(t, dict) and t.get("role") == "sensei"]
+    return any(name in text for text in haku_texts[-NICKNAME_COOLDOWN:] for name in names)
 
-    # 빈 메시지 처리는 ask_haku() 가 원래 하던 대로 맡긴다.
-    if not message or not str(message).strip():
-        return None
 
-    try:
-        result = _check(message, data.get("history", []))
-    except Exception as e:
-        # 판별을 못 했는데 하쿠로 넘기면 "틀린 말도 통과"된 것처럼 보이므로 여기서 멈춘다.
-        app.logger.warning("정오 판별 실패: %s", e)
-        busy = "정오 판별 서버가 지금 바빠요. 잠시 후 다시 보내주세요."
-        return jsonify(ok=False, error=QUOTA_MESSAGE if _is_quota_error(e) else busy)
-
-    if result.is_correct:
-        return None
-
-    # 틀렸으면 판별 결과를 돌려준다. 하쿠는 부르지 않는다.
-    # chat.js 는 "틀렸어요." 알림 박스만 보여주고(대화 기록 haku_log 에는 role "check"), feedback 은 system_corrections 에 남긴다.
-    feedback = result.feedback or "방금 설명에 틀린 부분이 있어요."
-    return jsonify(
-        ok=True,
-        is_correct=False,
-        feedback=feedback,
-        question=f"틀렸어요. {feedback}",
-    )
+# 정오 판별을 하쿠와 동시에 돌리기 위한 일꾼. 요청마다 만들지 않고 서버가 켜질 때 한 번만 만든다.
+_check_executor = ThreadPoolExecutor(max_workers=8)
 
 
 # ─────────────────────────────────────────────
-# 2) 하쿠 꼬리질문: 정오 판별을 통과했을 때만 실행된다
+# 1) 하쿠 꼬리질문 + 정오 판별 (동시에)
 # ─────────────────────────────────────────────
 @app.post("/ask-haku")
 def ask_haku():
@@ -255,42 +335,63 @@ def ask_haku():
     # 지금까지의 대화 기록 (선택). 프론트가 안 보내면 그냥 이번 메시지 하나로만 대화한다.
     history = data.get("history", [])
 
-    # 하쿠가 사용자를 부를 이름 (선택). 첫 채팅에서 하쿠가 물어보고 정한 닉네임이다.
+    # 하쿠가 사용자를 부를 이름 (선택). 처음 로그인할 때 이름 정하기 화면에서 정한 닉네임이다.
     # 프롬프트에 그대로 들어가므로 프론트의 최대 길이(16글자)를 넘는 부분은 자른다.
     nickname = str(data.get("nickname") or "").strip()[:16]
     system_instruction = prompts.SYSTEM_PROMPT
-    if nickname:
+    # 호칭은 가끔만 부른다. 최근 하쿠의 말에 이미 호칭이 있었으면 이번에는 부르지 말라고 한다.
+    if _called_recently(history, nickname):
+        system_instruction += prompts.NO_NICKNAME_PROMPT
+    elif nickname:
         system_instruction += prompts.NICKNAME_PROMPT.format(nickname=nickname)
+
+    # 사용자 수준 1~5 (선택). 설문의 level_init / 이후 level_current. 범위 밖이거나 숫자가 아니면 무시한다.
+    level = data.get("level")
+    if isinstance(level, int) and 1 <= level <= 5:
+        system_instruction += prompts.LEVEL_PROMPT.format(level=level)
 
     # message 가 비어 있으면 Gemini 호출 자체가 400 으로 터진다.
     # 여기서 미리 걸러서 프론트가 읽을 수 있는 형태로 돌려준다.
     if not message or not str(message).strip():
         return jsonify(ok=False, error="message 가 비어 있습니다."), 400
 
+    # 정오 판별을 먼저 다른 일꾼에게 맡겨 두고, 그동안 하쿠를 부른다.
+    # 예전에는 판별이 끝나야 하쿠를 불러서, 기다리는 시간이 둘을 더한 만큼이었다.
+    # 지금은 둘 중 오래 걸리는 쪽만큼만 기다린다. (하쿠는 판정을 모르므로 판정을 기다릴 필요가 없다)
+    check_future = _check_executor.submit(_check, message, history)
+
     # 이전 대화 + 이번 메시지를 순서대로 이어 붙여서 맥락을 유지한다.
     contents = _history_to_contents(history)
     contents.append(types.Content(role="user", parts=[types.Part(text=str(message))]))
 
     try:
-        res = client.models.generate_content(
-            model=HAKU_MODEL,
-            # contents = 매번 바뀌는 값 (지금까지의 대화 + 사용자가 방금 한 말)
-            contents=contents,
-            config=types.GenerateContentConfig(
-                # system_instruction = 대화 내내 같은 값 (하쿠의 역할 지시 + 사용자 호칭)
-                # 프롬프트를 contents 에 사용자 말과 같이 붙여 보내면
-                # Gemini 가 그걸 '사용자가 한 말'로 취급해 캐릭터가 무너진다.
-                # 반드시 여기로 분리해서 넣을 것.
-                system_instruction=system_instruction,
-            ),
-        )
+        # HAKU_MODELS 를 앞에서부터 시도한다. (앞 모델이 분당 한도에 걸리면 다음 모델로)
+        # contents = 매번 바뀌는 값 (지금까지의 대화 + 사용자가 방금 한 말)
+        # system_instruction = 대화 내내 같은 값 (하쿠의 역할 지시 + 사용자 호칭)
+        # 프롬프트를 contents 에 사용자 말과 같이 붙여 보내면
+        # Gemini 가 그걸 '사용자가 한 말'로 취급해 캐릭터가 무너진다.
+        # 반드시 system_instruction 으로 분리해서 넣을 것.
+        question, _ = _generate_with_models(HAKU_MODELS, contents, system_instruction)
     except Exception as e:
         # Gemini 쪽 오류(키 문제, 네트워크, 모델명 오타 등)를 그대로 500 HTML 로 터뜨리면
         # 프론트의 res.json() 이 깨진다. JSON 으로 감싸서 돌려준다.
         return jsonify(ok=False, error=f"하쿠가 응답하지 못했어요: {e}"), 500
 
-    # res.text 가 실제 하쿠의 문장이다.
-    return jsonify(ok=True, question=res.text)
+    # question 이 실제 하쿠의 문장이다. 이제 정오 판별이 끝나기를 기다린다.
+    try:
+        check = check_future.result()
+    except Exception as e:
+        # 판별을 못 했는데 하쿠의 대답만 보여주면 "틀린 말도 통과"된 것처럼 보이므로 여기서 멈춘다.
+        app.logger.warning("정오 판별 실패: %s", e)
+        busy = "정오 판별 서버가 지금 바빠요. 잠시 후 다시 보내주세요."
+        return jsonify(ok=False, error=QUOTA_MESSAGE if _is_quota_error(e) else busy)
+
+    # 정오 판별 결과는 하쿠의 말과 따로 보낸다.
+    # 틀렸으면 chat.js 가 feedback 을 하쿠 말풍선이 아니라 "시스템 알림" 박스로 띄운다.
+    if not check.is_correct:
+        feedback = check.feedback or "방금 설명에 틀린 부분이 있어요."
+        return jsonify(ok=True, question=question, is_correct=False, feedback=feedback)
+    return jsonify(ok=True, question=question, is_correct=True)
 
 
 # ─────────────────────────────────────────────
@@ -343,7 +444,7 @@ def replace_quota_error(response):
 # ─────────────────────────────────────────────
 @app.post("/check-system")
 def check_system():
-    """정오 판별만 따로 해보고 싶을 때 쓰는 주소. (채팅에서는 위의 check_before_haku 가 알아서 한다)
+    """정오 판별만 따로 해보고 싶을 때 쓰는 주소. (채팅에서는 위의 ask_haku 가 하쿠와 동시에 판별한다)
 
     받는 것:     {message, history?}
     돌려주는 것: {ok: true, is_correct: true | false, feedback: "..."}
@@ -417,7 +518,7 @@ def _choose_quiz_type(history, previous):
     문제를 만드는 호출과 나눈 이유: 유형 고르기 프롬프트(CHOOSE_QUIZ_TYPE)와 문제 프롬프트를 따로 다듬으려고.
     고르기에 실패해도(혼잡, 사용량 초과 등) 퀴즈가 막히지 않게, 이미 낸 문제 중 더 적게 나온 유형으로 정한다.
     """
-    contents = _history_to_contents(history)
+    contents = _history_to_contents(history, include_system=True)
     request_text = "지금까지 대화로 다음 시험 문제의 유형을 골라줘."
     if previous:
         request_text += "\n아래는 이미 낸 문제야. ([ ] 안은 그 문제의 유형)\n" + "\n".join(
@@ -453,15 +554,16 @@ def generate_quiz():
     받는 것:     {history, previous?, type?}  (previous = 이미 낸 문제의 지문들)
         type 을 안 보내면(지금의 quiz.js) 두 단계로 만든다.
           ① _choose_quiz_type(): QUIZ_TYPE_MODEL 이 대화 내용을 보고 빈칸 주관식 / 객관식 중 더 맞는 유형을 고른다.
-          ② QUIZ_MODEL 이 고른 유형의 프롬프트(GENERATE_QUIZ / GENERATE_CHOICE_QUIZ)로 문제를 만든다.
+          ② QUIZ_MODELS 가 (앞에서부터 차례로) 고른 유형의 프롬프트(GENERATE_QUIZ / GENERATE_CHOICE_QUIZ)로 문제를 만든다.
         type 에 "blank" | "choice" 를 보내면 ① 없이 그 유형으로만 만든다. (예전 방식. 옛 화면이 보내도 동작하게 남겨 둔다)
     돌려주는 것: {ok: true, items: [{type, question: "...", answers: ["...", ...], choices?: [...]}]}  (문제는 최대 1개)
         type 이 "choice"(객관식)면 choices 에 보기들이 오고, answers 에는 정답 보기 1개만 담긴다.
         대화에 문제로 낼 내용이 없으면 items 가 빈 목록이고, Gemini 가 깨진 문제를 주면 ok: false 다.
+        맨 뒤(마지막 수단) 모델로 만들었으면 notice 에 QUIZ_FALLBACK_NOTICE 가 같이 온다.
     """
     data = request.get_json(silent=True) or {}
     history = data.get("history", [])
-    contents = _history_to_contents(history)
+    contents = _history_to_contents(history, include_system=True)
 
     if not contents:
         return jsonify(ok=False, error="대화 기록이 없어서 문제를 만들 수 없어요."), 400
@@ -495,23 +597,17 @@ def generate_quiz():
         prompt, schema = prompts.GENERATE_QUIZ, QuizResult
 
     try:
-        res = _generate_with_retry(
-            model=QUIZ_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=prompt,
-                response_mime_type="application/json",
-                response_schema=schema,
-            ),
-        )
-        result = _parse(res, schema)
+        result, used_fallback = _generate_with_models(QUIZ_MODELS, contents, prompt, schema)
     except Exception as e:
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e}"), 500
+
+    # 마지막 수단 모델로 만들었으면 퀴즈 화면에 안내 문구를 같이 띄운다.
+    notice = {"notice": QUIZ_FALLBACK_NOTICE} if used_fallback else {}
 
     # 시험지는 한 문제만 낸다. Gemini 가 여러 개를 줘도 첫 번째만 쓴다.
     # 대화에 문제로 낼 내용이 없어서 빈 목록이 오면 그대로 돌려준다. (quiz.js 가 안내 문구를 띄운다)
     if not result.items:
-        return jsonify(ok=True, items=[])
+        return jsonify(ok=True, items=[], **notice)
     item = result.items[0]
 
     try:
@@ -527,7 +623,91 @@ def generate_quiz():
         app.logger.warning("쓸 수 없는 문제라서 버림: %s %r", e, item)
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e} 새로고침하면 다시 만들어요."), 500
 
-    return jsonify(ok=True, items=[quiz_item])
+    return jsonify(ok=True, items=[quiz_item], **notice)
+
+
+# 레벨의 범위. 프론트(user.js)의 LEVEL_MIN / LEVEL_MAX 와 같은 값.
+LEVEL_MIN, LEVEL_MAX = 1, 5
+
+
+@app.post("/judge-level")
+def judge_level():
+    """사용자의 대답 하나가 어느 학교급 학생이 할 만한 설명인지 판단한다. (레벨 1~5)
+
+    채팅에서 사용자가 메시지를 보낼 때마다 chat.js 가 하쿠의 대답과 따로 부른다. (하쿠는 이 결과를 기다리지 않는다)
+    받는 것:     {message, question?}  (question = 이 대답 바로 전에 하쿠가 한 말. 무엇에 대한 대답인지 알려준다)
+    돌려주는 것: {ok: true, is_explanation: true | false, level: 1~5, reason: "..."}
+        is_explanation 이 false(질문, "모르겠어" 같은 말, "무슨 색이야?" 에 "초록색이야" 처럼 한 단어 답)면 level 은 쓰지 않는다.
+    판단한 레벨을 DB 에 기록하고 사용자의 레벨을 움직이는 것은 프론트(store.js / user.js)가 한다.
+    """
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    question = str(data.get("question") or "").strip()
+
+    if not message:
+        return jsonify(ok=False, error="message 가 비어 있습니다."), 400
+
+    # 대화 전체가 아니라 하쿠의 마지막 질문과 이번 대답만 보낸다. 판단할 대답이 무엇인지 헷갈리지 않게.
+    text = f"하쿠의 질문: {question}\n사용자의 대답: {message}" if question else f"사용자의 설명: {message}"
+
+    try:
+        res = _generate_with_retry(
+            attempts=2,
+            model=LEVEL_MODEL,
+            contents=[types.Content(role="user", parts=[types.Part(text=text)])],
+            config=types.GenerateContentConfig(
+                system_instruction=prompts.JUDGE_LEVEL,  # prompts.py 의 대답 수준 판단 프롬프트
+                response_mime_type="application/json",
+                response_schema=LevelResult,
+            ),
+        )
+        result = _parse(res, LevelResult)
+    except Exception as e:
+        app.logger.warning("대답 수준을 판단하지 못함: %s", e)
+        return jsonify(ok=False, error=f"대답 수준을 판단하지 못했어요: {e}"), 500
+
+    # Gemini 가 범위 밖의 숫자를 줘도 1~5 안으로 맞춘다.
+    level = min(max(result.level, LEVEL_MIN), LEVEL_MAX)
+    app.logger.info("대답 수준: %d (%s)", level, result.reason)
+    return jsonify(ok=True, is_explanation=result.is_explanation, level=level, reason=result.reason)
+
+
+@app.post("/grade-quiz")
+def grade_quiz():
+    """빈칸 주관식 답을 채점한다. [채점하기] 를 눌렀을 때 quiz.js 가 부른다.
+
+    객관식과, 글자가 정답과 똑같은 빈칸 답은 quiz.js 가 직접 채점하고, 판단이 필요한 빈칸 답만 여기로 온다.
+    ("S" 와 "황" 처럼 표기만 다른 답을 정답으로 보려고 Gemini 에게 맡긴다)
+
+    받는 것:     {items: [{question, answers: ["정답", ...], user_answer: "..."}]}
+    돌려주는 것: {ok: true, results: [true | false, ...]}  (items 와 같은 순서)
+    """
+    data = request.get_json(silent=True) or {}
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        return jsonify(ok=False, error="채점할 문제가 없어요."), 400
+
+    lines = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            return jsonify(ok=False, error="채점할 문제의 형식이 이상해요."), 400
+        answers = item.get("answers") if isinstance(item.get("answers"), list) else []
+        lines.append(
+            f"[{i}] 문제: {item.get('question', '')}\n"
+            f"    정답: {' / '.join(str(a) for a in answers)}\n"
+            f"    사용자의 답: {item.get('user_answer') or '(빈 답)'}"
+        )
+    contents = [types.Content(role="user", parts=[types.Part(text="\n".join(lines))])]
+
+    try:
+        result, _ = _generate_with_models(GRADE_MODELS, contents, prompts.GRADE_QUIZ, GradeResult)
+    except Exception as e:
+        return jsonify(ok=False, error=f"채점하지 못했어요: {e}"), 500
+
+    # 돌려받은 번호로 맞춘다. Gemini 가 빠뜨린 문제는 오답으로 본다.
+    graded = {r.index: r.is_correct for r in result.results}
+    return jsonify(ok=True, results=[graded.get(i, False) for i in range(len(items))])
+
 
 if __name__ == "__main__":
     # debug=True 면 파일 저장 시 서버가 자동 재시작된다. 개발 중에만 켤 것.

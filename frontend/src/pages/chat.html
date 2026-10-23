@@ -12,22 +12,10 @@
   </head>
   <body data-page="chat">
     <div class="phone">
-      <!-- 주제가 아직 없을 때: 기본 로고 헤더 -->
-      <div class="header" id="idle-header">
-        <span class="logo">SENSEI</span>
-        <button type="button" class="icon-btn" aria-label="음성으로 설명하기">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v4" />
-          </svg>
-        </button>
-      </div>
+      <!-- 화면 이동은 이 삼선 메뉴로만 한다 (하단 탭바 없음) -->
+      <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu" aria-expanded="false">
+        <img src="../../public/icon-menu.svg" alt="" />
+      </button>
 
       <!-- 첫 메시지를 보내면 주제 이름이 채워지는 헤더로 바뀐다 -->
       <div class="topic-header" id="topic-header" hidden>
@@ -68,23 +56,19 @@
       </div>
 
       <!--
-        캐릭터 화면(기본 화면). 대화 전에는 인사말, 대화 중에는 하쿠의 최신 말풍선 하나만
-        여기 띄워서 "캐릭터와 계속 대화하는" 느낌을 유지한다. 내용은 chat.js의 renderStageBubble()이 채운다.
+        캐릭터 화면(기본 화면). 대화 전에는 인사말(시안 문구 그대로 "안녕!"), 대화 중에는 하쿠의 최신 말 하나만
+        말풍선에 띄워서 "캐릭터와 계속 대화하는" 느낌을 유지한다. 내용은 chat.js 의 renderStage() 가 채운다.
         대화 중에는 이 화면 아무 데서나 위로 쓸어 올려도 전체 대화 목록(#message-list)이 열린다.
       -->
-      <div class="body body--center" id="stage">
-        <div class="bubble bubble--sensei bubble--greeting" id="stage-bubble">
-          안녕! 오늘은 뭘 <span class="mark">가르쳐</span> 줄 거야?
+      <main class="chat__empty" id="stage">
+        <!-- 정오 판별에서 틀렸을 때 말풍선 위에 뜨는 알림 -->
+        <div class="stage-feedback" id="stage-feedback" hidden></div>
+        <div class="chat-greeting" id="stage-bubble">안녕!</div>
+        <div class="chat-mascot" aria-hidden="true">
+          <img class="chat-mascot__img" src="../../public/mascot.png" alt="" />
+          <img class="chat-mascot__shadow" src="../../public/haku-shadow.png" alt="" />
         </div>
-        <div class="mascot-slot blob-stage">
-          <span class="cloud cloud--1"></span>
-          <span class="cloud cloud--2"></span>
-          <div>
-            <!-- 발밑 그림자는 그림 안에 이미 있어서 .mascot-ground 는 따로 두지 않는다 -->
-            <img src="../../public/mascot.png" alt="하쿠 마스코트" />
-          </div>
-        </div>
-      </div>
+      </main>
 
       <!--
         대화가 시작되면 보이는 손잡이. 드래그(또는 탭)해서 하쿠 화면 ↔ 전체 대화 목록을 오간다.
@@ -114,22 +98,35 @@
         <input
           type="text"
           id="composer-input"
-          placeholder="지수한테 설명해줘..."
+          placeholder="대화를 시작해보세요"
           aria-label="설명 입력"
           autocomplete="off"
         />
         <button class="send" type="submit" id="send-btn" aria-label="보내기">
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round" aria-hidden="true">
-            <path d="m22 2-7 20-4-9-9-4Z" />
-          </svg>
+          <img src="../../public/icon-send.svg" alt="" />
         </button>
       </form>
-
-      <div class="bottom-nav" id="bottom-nav"></div>
     </div>
 
+    <!-- 삼선 메뉴(서랍). 하단 탭바 대신 이 메뉴로만 화면을 이동한다 -->
+    <div class="menu-overlay" id="menu-overlay"></div>
+    <nav class="menu" id="menu" aria-label="메뉴" aria-hidden="true" inert>
+      <button class="menu__close" type="button" id="btn-menu-close" aria-label="메뉴 닫기"></button>
+      <div class="menu__user">
+        <p class="menu__name" id="menu-nickname">닉네임</p>
+        <p class="menu__sub">하쿠의 선생님</p>
+      </div>
+      <ul class="menu__list">
+        <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat" aria-current="page">새 대화</a></li>
+        <li><a class="menu__item" href="./history.html" id="menu-history">학습 기록</a></li>
+        <li><a class="menu__item" href="./quiz.html" id="menu-test">빈틈 시험지</a></li>
+        <li><a class="menu__item" href="./profile.html" id="menu-profile">프로필</a></li>
+      </ul>
+      <button class="menu__logout" type="button" id="btn-logout">로그아웃</button>
+    </nav>
+
     <script type="module" src="../scripts/guard.js"></script>
-    <script type="module" src="../scripts/nav.js"></script>
+    <script type="module" src="../scripts/menu.js"></script>
     <script type="module" src="../scripts/chat.js"></script>
   </body>
 </html>

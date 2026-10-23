@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // 로그인한 사용자의 정보(DB 의 users 테이블) 읽기 / 쓰기.
-//   닉네임  첫 채팅에서 하쿠가 물어보고 정한다 (chat.js).
-//   수준    "더 쉽게" 를 누를 때마다 한 단계씩 내려간다 (chat.js).
+//   닉네임  처음 로그인했을 때 이름 정하기 화면에서 정한다 (nickname.js).
+//   수준    "더 쉽게" 를 누르면 한 단계 내려가고, 설명을 보낼 때마다 그 설명의 수준 쪽으로 조금씩 움직인다 (chat.js).
 // ─────────────────────────────────────────────
 
 import { supabase } from "./supabase.js";
@@ -10,12 +10,23 @@ import { requireUser } from "./auth.js";
 // 프로필 화면의 닉네임 입력칸(maxlength)과 같은 값.
 export const NICKNAME_MAX = 16;
 
+// 눈에 안 보이는 글자: 한글 채움 문자(U+3164 등)와 폭 없는 공백(U+200B 등).
+// 이것만 넣으면 빈칸 검사를 통과해서, 인사말에 이름이 없는 것처럼("안녕 !") 보이므로 뺀다.
+const INVISIBLE_CHARS = /[\u115F\u1160\u3164\uFFA0\u200B-\u200D\u2060\uFEFF]/g;
+
+/** 닉네임 입력을 다듬는다. 보이지 않는 글자와 앞뒤 공백을 빼고, 남는 게 없으면 빈 문자열. */
+export function cleanNickname(text) {
+  return text.replace(INVISIBLE_CHARS, "").trim();
+}
+
 /**
  * users 행에 upsert 할 값. 이메일은 로그인 정보에 있을 때만 같이 쓴다.
  * (이메일 없이 가입한 카카오 계정 등이 저장할 때마다 DB 의 이메일을 빈 값으로 덮어쓰지 않게)
  */
 function userRow(user, fields) {
-  return user.email ? { id: user.id, email: user.email, ...fields } : { id: user.id, ...fields };
+  return user.email
+    ? { id: user.id, email: user.email, ...fields }
+    : { id: user.id, ...fields };
 }
 
 /** 내 닉네임. 아직 정하지 않았으면 null. */
@@ -37,43 +48,87 @@ export async function getNickname() {
  */
 export async function saveNickname(nickname) {
   const user = await requireUser();
-  const { error } = await supabase.from("users").upsert(userRow(user, { nickname }));
+  const { error } = await supabase
+    .from("users")
+    .upsert(userRow(user, { nickname }));
   if (error) throw error;
 }
 
 // ─────────────────────────────────────────────
 // 수준(level): 숫자가 작을수록 쉽게. 나중에 하쿠가 질문 난이도를 맞출 때 쓰려고 모은다.
+//   1 초등 저학년 · 2 초등 고학년 · 3 중학생 · 4 고등학생 · 5 대학생 이상
 //   level_init     처음 수준. 여기서는 바꾸지 않는다.
-//   level_current  지금 수준. "더 쉽게" 를 누르면 1 내려간다.
+//   level_score    지금 수준을 소수까지 담은 점수. 설명 하나로 수준이 확 바뀌지 않게 이 점수를 조금씩 움직인다.
+//   level_current  지금 수준. level_score 를 반올림한 값.
+// 점수가 바뀌는 때:
+//   "더 쉽게" 를 누르면 1 내려간다. (lowerLevel)
+//   설명을 보내면 백엔드가 판단한 그 설명의 수준 쪽으로 20% 다가간다. (applyAnswerLevel)
 // 아직 하쿠의 질문이나 화면에는 반영하지 않는다.
 // ─────────────────────────────────────────────
 
 // 가장 낮은(쉬운) 수준. 이미 여기면 "더 쉽게" 를 눌러도 그대로 둔다.
 const LEVEL_MIN = 1;
+// 가장 높은 수준. 백엔드(app.py)의 LEVEL_MAX 와 같은 값.
+const LEVEL_MAX = 5;
 // DB(users)의 level_init / level_current 기본값과 같은 값.
-// users 행이 없거나 두 칸이 모두 비어 있으면 이 수준이었던 것으로 본다.
+// users 행이 없거나 수준 칸이 모두 비어 있으면 이 수준이었던 것으로 본다.
 const LEVEL_DEFAULT = 3;
+// 설명 하나가 점수를 움직이는 정도. 0.2 = 판단한 수준과의 차이의 20% 만큼 다가간다.
+// (예: 점수 3 에서 4 수준의 설명을 하면 3.2, 한 번 더 하면 3.36. 한두 번 튀는 설명에 크게 흔들리지 않는다)
+const ANSWER_WEIGHT = 0.2;
 
-/**
- * 지금 수준(level_current)을 한 단계 내리고, 내린 수준을 돌려준다. ("더 쉽게" 를 눌렀을 때)
- * level_current 가 비어 있으면 처음 수준(level_init)에서 내린다.
- * upsert 인 이유는 saveNickname 과 같다. (users 행이 없는 계정은 이때 행을 같이 만든다)
- */
-export async function lowerLevel() {
-  const user = await requireUser();
+function clampLevel(score) {
+  return Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, score));
+}
+
+/** 지금 점수. level_score 가 비어 있으면(이 칸이 생기기 전의 계정) level_current → level_init 순서로 쓴다. */
+async function readLevelScore(user) {
   const { data, error } = await supabase
     .from("users")
-    .select("level_init, level_current")
+    .select("level_init, level_current, level_score")
     .eq("id", user.id)
     .maybeSingle();
   if (error) throw error;
+  return data?.level_score ?? data?.level_current ?? data?.level_init ?? LEVEL_DEFAULT;
+}
 
-  const current = data?.level_current ?? data?.level_init ?? LEVEL_DEFAULT;
-  const level = Math.max(LEVEL_MIN, current - 1);
-
-  const { error: saveError } = await supabase
+/**
+ * 점수를 저장하고, 반올림한 지금 수준을 돌려준다.
+ * upsert 인 이유는 saveNickname 과 같다. (users 행이 없는 계정은 이때 행을 같이 만든다)
+ */
+async function saveLevelScore(user, score) {
+  // 소수 둘째 자리까지만 남긴다. (DB 에서 3.2 가 3.2000000476 처럼 보이지 않게)
+  const rounded = Math.round(clampLevel(score) * 100) / 100;
+  const level = Math.round(rounded);
+  const { error } = await supabase
     .from("users")
-    .upsert(userRow(user, { level_current: level }));
-  if (saveError) throw saveError;
+    .upsert(userRow(user, { level_score: rounded, level_current: level }));
+  if (error) throw error;
   return level;
+}
+
+// 점수 바꾸기는 한 번에 하나씩 한다. 읽고 → 계산하고 → 저장하는 사이에 다른 변경이 끼어들면
+// (예: 설명의 수준 판단이 끝나는 순간 "더 쉽게" 를 누름) 한쪽의 변경이 덮어써져 사라지기 때문이다.
+let levelQueue = Promise.resolve();
+
+/** change(지금 점수) 가 돌려준 값을 새 점수로 저장하고, 지금 수준을 돌려준다. */
+function changeLevelScore(change) {
+  const run = levelQueue.then(async () => {
+    const user = await requireUser();
+    const score = await readLevelScore(user);
+    return saveLevelScore(user, change(score));
+  });
+  // 하나가 실패해도 다음 변경은 그대로 돌게 한다. (실패는 run 을 기다리는 쪽이 받는다)
+  levelQueue = run.catch(() => {});
+  return run;
+}
+
+/** 지금 수준을 한 단계 내리고, 내린 수준을 돌려준다. ("더 쉽게" 를 눌렀을 때) */
+export function lowerLevel() {
+  return changeLevelScore((score) => score - 1);
+}
+
+/** 설명 하나의 수준(1~5)을 반영한다. 점수를 그쪽으로 조금 움직이고, 지금 수준을 돌려준다. */
+export function applyAnswerLevel(answerLevel) {
+  return changeLevelScore((score) => score + (answerLevel - score) * ANSWER_WEIGHT);
 }

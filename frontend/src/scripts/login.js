@@ -14,11 +14,38 @@
 // ─────────────────────────────────────────────
 
 import { GOOGLE_CLIENT_ID } from "./config.js";
-import { HOME_PAGE, getCurrentUser, signInWithGoogleToken, signInWithKakao } from "./auth.js";
+import { HOME_PAGE, NICKNAME_PAGE, getCurrentUser, signInWithGoogleToken, signInWithKakao } from "./auth.js";
+import { getNickname } from "./user.js";
+
+/**
+ * 로그인을 마친 뒤 갈 곳. 닉네임을 아직 안 정했으면(처음 가입) 이름 정하기 화면, 정했으면 채팅.
+ * 닉네임 확인이 실패하면 일단 채팅으로 보낸다. (채팅 화면이 한 번 더 확인한다)
+ */
+async function goAfterLogin() {
+  let nickname = null;
+  try {
+    nickname = await getNickname();
+  } catch (err) {
+    console.warn("닉네임을 확인하지 못했어요:", err);
+    window.location.replace(HOME_PAGE);
+    return;
+  }
+  window.location.replace(nickname ? HOME_PAGE : NICKNAME_PAGE);
+}
 
 const googleBtnHost = document.getElementById("google-login-btn");
 const kakaoBtn = document.getElementById("kakao-login-btn");
 const errorEl = document.getElementById("login-error");
+const loginScrollBtn = document.getElementById("login-scroll-btn");
+
+// "로그인" 버튼은 실제 로그인 기능이 없다(이메일/비밀번호 로그인 미지원).
+// 눌리면 실제 로그인 수단인 소셜 로그인 쪽으로 시선을 모은다.
+loginScrollBtn?.addEventListener("click", () => {
+  const social = document.querySelector(".login-social");
+  social?.scrollIntoView({ behavior: "smooth", block: "center" });
+  social?.classList.add("is-highlight");
+  setTimeout(() => social?.classList.remove("is-highlight"), 900);
+});
 
 function showError(message) {
   errorEl.textContent = message;
@@ -86,7 +113,7 @@ async function startGoogleLogin() {
     callback: async ({ credential }) => {
       try {
         await signInWithGoogleToken(credential, nonce.raw);
-        window.location.replace(HOME_PAGE);
+        await goAfterLogin();
       } catch (err) {
         showError(`로그인하지 못했어요: ${err.message}`);
       }
@@ -100,14 +127,11 @@ async function startGoogleLogin() {
   }
 
   google.accounts.id.renderButton(googleBtnHost, {
+    type: "icon", // 로고만 있는 동그란 아이콘 버튼 (카카오 버튼과 나란히 두기 위함)
     theme: "outline", // 흰색 + 회색 테두리
-    shape: "pill", // 양끝이 둥근 알약 모양
-    size: "large", // 고를 수 있는 가장 큰 높이(40px). CSS 로 키우면 클릭이 막힐 수 있어서 그대로 둔다
-    text: "signin_with", // "Google 계정으로 로그인"
-    logo_alignment: "center",
+    shape: "circle",
+    size: "large", // 고를 수 있는 가장 큰 크기(40px). CSS 로 키우면 클릭이 막힐 수 있어서 그대로 둔다
     locale: "ko",
-    // Google 버튼은 너비를 px 숫자로만 받고, 400 까지만 된다.
-    width: Math.min(googleBtnHost.clientWidth, 400),
   });
 
   // One Tap: 화면 위에 Google 계정 선택 창을 띄운다. auto_select 면 여기서 자동 로그인된다.
@@ -123,9 +147,10 @@ async function init() {
     window.history.replaceState(null, "", window.location.pathname + keep);
   }
 
-  // 이미 로그인돼 있으면(카카오에서 막 돌아온 경우 포함) Google 에 묻지 않고 바로 채팅으로 간다.
+  // 이미 로그인돼 있으면(카카오에서 막 돌아온 경우 포함) Google 에 묻지 않고 바로 넘어간다.
+  // (닉네임이 없으면 이름 정하기 화면, 있으면 채팅)
   if (await getCurrentUser()) {
-    window.location.replace(HOME_PAGE);
+    await goAfterLogin();
     return;
   }
 

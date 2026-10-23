@@ -8,13 +8,13 @@
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
-import { askHaku } from "./api.js";
-import { NICKNAME_MAX, getNickname, lowerLevel, saveNickname } from "./user.js";
+import { askHaku, judgeLevel } from "./api.js";
+import { applyAnswerLevel, getNickname, lowerLevel } from "./user.js";
+import { NICKNAME_PAGE } from "./auth.js";
 
 const phoneEl = document.querySelector(".phone");
 const dragHint = document.getElementById("drag-hint");
 const dragHintText = document.getElementById("drag-hint-text");
-const idleHeader = document.getElementById("idle-header");
 const topicHeader = document.getElementById("topic-header");
 const topicNameEl = document.getElementById("topic-name");
 const topicDisplay = document.getElementById("topic-display");
@@ -25,6 +25,7 @@ const editTopicBtn = document.getElementById("edit-topic-btn");
 const topicSaveBtn = document.getElementById("topic-save-btn");
 const stage = document.getElementById("stage");
 const stageBubble = document.getElementById("stage-bubble");
+const stageFeedback = document.getElementById("stage-feedback");
 const messageList = document.getElementById("message-list");
 const alertBanner = document.getElementById("alert-banner");
 const quickActions = document.getElementById("quick-actions");
@@ -43,12 +44,31 @@ let isSending = false;
 // 손잡이(#drag-hint)를 드래그/탭하면 바뀐다. 메시지를 보내면 항상 "character"로 돌아온다.
 let view = "character";
 
+// [더 쉽게] / [모르겠어] 버튼이 보내는 말. 사용자가 직접 한 설명이 아니므로 설명 횟수에서 뺀다.
+const EASIER_MESSAGE = "방금 질문을 더 쉽게 다시 물어봐줄래?";
+const DONT_KNOW_MESSAGE = "음... 모르겠어. 힌트를 줄 수 있어?";
+
+// 직접 설명을 이만큼 해야 [퀴즈 풀기] 를 누를 수 있다. (기획서 예상 문제점 ③: 설명이 거의 없으면 낼 문제가 없다)
+const MIN_EXPLANATIONS_FOR_QUIZ = 3;
+
+/** 세션에서 사용자가 직접 한 설명의 수. 버튼으로 보낸 말은 세지 않는다. */
+function countExplanations(session) {
+  return (session?.messages ?? []).filter(
+    (m) => m.role === "user" && m.text !== EASIER_MESSAGE && m.text !== DONT_KNOW_MESSAGE,
+  ).length;
+}
+
+/** 설명 횟수에 맞춰 [퀴즈 풀기] 를 켜고 끈다. 모자라면 버튼에 "퀴즈 풀기 1/3" 처럼 진행 정도를 보여준다. */
+function updateQuizBtn() {
+  const count = countExplanations(activeSession);
+  const ready = count >= MIN_EXPLANATIONS_FOR_QUIZ;
+  quizBtn.disabled = !ready;
+  quizBtn.textContent = ready ? "퀴즈 풀기" : `퀴즈 풀기 ${count}/${MIN_EXPLANATIONS_FOR_QUIZ}`;
+  quizBtn.title = ready ? "" : `하쿠에게 ${MIN_EXPLANATIONS_FOR_QUIZ}번 이상 설명하면 퀴즈를 풀 수 있어요.`;
+}
+
 // 하쿠가 부르는 이름. DB(users.nickname)에서 불러오고, 하쿠에게 질문할 때 같이 보낸다.
 let nickname = null;
-// 하쿠의 첫 인사(닉네임 정하기) 중인지, 그리고 그동안 화면에만 보이는 말풍선들.
-// 첫 인사 말풍선은 세션에 저장하지 않는다. (아래 "하쿠의 첫 인사" 참고)
-let askingNickname = false;
-let introMessages = [];
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -79,16 +99,26 @@ function systemAlert(text) {
     </div>`;
 }
 
-// 정오 판별에서 틀렸을 때 보여주는 말. 어디가 틀렸는지 설명은 화면에 보여주지 않고
-// (사용자가 스스로 다시 생각하게) system_corrections 기록에만 남긴다.
-const WRONG_TEXT = "틀렸어요.";
-
-/** 정오 판별에서 틀렸을 때의 "틀렸어요." 알림 박스. 하쿠의 말이 아니라서 말풍선과 따로 그린다. */
-function checkAlert() {
+/** 정오 판별에서 틀렸을 때의 알림 박스. 하쿠 말풍선, 보통 시스템 알림(보라)과 구분되게 빨간색이다. */
+function wrongAlert(text) {
   return `
     <div class="system system--wrong" aria-label="정오 판별">
-      <p class="system__text">${WRONG_TEXT}</p>
+      <p class="system__title">시스템 알림</p>
+      <p class="system__text">${escapeHtml(text)}</p>
     </div>`;
+}
+
+/**
+ * 저장된 메시지 하나를 화면에 그린다.
+ *   user   → 사용자 말풍선
+ *   system → 정오 판별 알림 (어디가 틀렸는지 짚는 빨간 박스)
+ *   check  → 예전 방식의 정오 판별 알림 ("틀렸어요." 만 저장된 대화). system 과 똑같이 그린다.
+ *   sensei → 하쿠 말풍선
+ */
+function renderMessage(m) {
+  if (m.role === "user") return bubbleRowUser(m.text);
+  if (m.role === "system" || m.role === "check") return wrongAlert(m.text);
+  return bubbleRowSensei(m.text);
 }
 
 /**
@@ -111,69 +141,60 @@ function showSessionInUrl(id) {
 }
 
 /**
- * 캐릭터 화면(#stage-bubble)에 보여줄 말풍선 하나를 정한다.
+ * 캐릭터 화면(#stage)에 보여줄 말풍선 하나를 정한다.
  * 목록(#message-list)과 달리 캐릭터 화면은 항상 "지금 하쿠가 하고 있는 말" 한 줄만 보여준다.
- *   - 대화 전: 고정 인사말
- *   - 마지막이 하쿠 말: 그 말
- *   - 마지막이 "틀렸어요"(check): 틀렸다는 표시
+ *   - 대화 전: 인사말 "안녕!"
+ *   - 그 밖: 가장 최근 하쿠의 말. 그 턴에 정오 판별에서 틀렸으면(system / 예전 check) 말풍선 위에 빨간 알림도 띄운다.
  *   - 마지막이 사용자 말(하쿠 답을 기다리는 중): 그 직전 하쿠 말을 그대로 유지해서 보여준다
  *     (답이 오면 render()가 다시 불려서 새 말로 바뀐다)
  */
-function renderStageBubble(shown, inSession) {
+function renderStage(messages) {
   stageBubble.classList.remove("is-typing");
   stageBubble.removeAttribute("aria-label");
+  stageFeedback.hidden = true;
+  stageFeedback.innerHTML = "";
 
-  if (shown.length === 0) {
-    stageBubble.className = "bubble bubble--sensei bubble--greeting";
-    stageBubble.textContent = "";
-    stageBubble.append("안녕");
-    if (nickname) stageBubble.append(` ${nickname}`);
-    stageBubble.append("! 오늘은 뭘 ");
-    const mark = document.createElement("span");
-    mark.className = "mark";
-    mark.textContent = "가르쳐";
-    stageBubble.append(mark, " 줄 거야?");
+  if (messages.length === 0) {
+    stageBubble.className = "chat-greeting";
+    stageBubble.textContent = "안녕!";
     return;
   }
 
-  const last = shown[shown.length - 1];
-  const source =
-    last.role === "user" ? [...shown].reverse().find((m) => m.role !== "user") : last;
-
-  if (!source) {
-    // 아직 하쿠가 한 마디도 안 한 상태(첫 메시지를 막 보낸 직후) — 기다리는 느낌만 준다.
-    stageBubble.className = "bubble bubble--tint";
-    stageBubble.textContent = "음...";
-    return;
+  // 마지막 사용자 말 앞뒤로 끊어서, 가장 최근 턴의 하쿠 쪽 메시지(알림 + 하쿠 말)만 모은다.
+  const waiting = messages[messages.length - 1].role === "user";
+  let i = messages.length - 1;
+  while (i >= 0 && messages[i].role === "user") i -= 1;
+  const turn = [];
+  while (i >= 0 && messages[i].role !== "user") {
+    turn.unshift(messages[i]);
+    i -= 1;
   }
 
-  if (source.role === "check") {
-    stageBubble.className = "bubble bubble--wrong";
-    stageBubble.textContent = WRONG_TEXT;
-    return;
+  const feedback = turn.find((m) => m.role === "system" || m.role === "check");
+  if (feedback && !waiting) {
+    stageFeedback.innerHTML = wrongAlert(feedback.text);
+    stageFeedback.hidden = false;
   }
 
-  stageBubble.className = inSession ? "bubble bubble--tint" : "bubble bubble--sensei";
-  stageBubble.textContent = source.text;
+  stageBubble.className = "chat-greeting chat-greeting--talk";
+  // 아직 하쿠가 한 마디도 안 한 상태(첫 메시지를 막 보낸 직후) — 기다리는 느낌만 준다.
+  stageBubble.textContent = turn.findLast((m) => m.role === "sensei")?.text ?? "음...";
 }
 
 /** 현재 세션 상태(activeSession)와 화면 모드(view)에 맞춰 화면 전체를 다시 그린다. */
 function render() {
-  const sessionMessages = activeSession?.messages ?? [];
-  const inSession = sessionMessages.length > 0;
-  // 화면에는 첫 인사 말풍선(있으면) 뒤에 세션 대화를 이어서 보여준다.
-  const shown = [...introMessages, ...sessionMessages];
+  const messages = activeSession?.messages ?? [];
+  const hasMessages = messages.length > 0;
 
   // 대화가 없으면(세션 자체가 없으면) 목록을 볼 수 없다 — 항상 캐릭터 화면으로.
-  if (!inSession) view = "character";
+  if (!hasMessages) view = "character";
 
-  const showList = inSession && view === "list";
+  const showList = hasMessages && view === "list";
 
-  // 전체 대화 목록을 보고 있을 때만 conversation.html 이 쓰던 톤(연보라 배경)으로,
-  // 캐릭터와 대화하는 중(기본 화면)에는 흰 배경을 유지한다.
+  // 전체 대화 목록을 보고 있을 때만 연한 배경으로, 캐릭터와 대화하는 중(기본 화면)에는 흰 배경을 유지한다.
   phoneEl.classList.toggle("phone--tinted", showList);
 
-  dragHint.hidden = !inSession;
+  dragHint.hidden = !hasMessages;
   if (dragHintText) {
     dragHintText.textContent =
       view === "list" ? "아래로 내려서 하쿠에게 돌아가기" : "위로 올려서 전체 대화 보기";
@@ -185,28 +206,23 @@ function render() {
   if (showList && dragHint.nextElementSibling !== messageList) messageList.before(dragHint);
   if (!showList && stage.lastElementChild !== dragHint) stage.append(dragHint);
   // 대화 중 하쿠 화면은 화면 전체가 "위로 쓸어 올리기" 영역이다 (아래 stage 의 pointer 이벤트).
-  stage.classList.toggle("stage--swipeable", inSession);
+  stage.classList.toggle("stage--swipeable", hasMessages);
 
-  idleHeader.hidden = inSession;
-  topicHeader.hidden = !inSession;
-  if (inSession) topicNameEl.textContent = activeSession.topic || "학습 중";
-
+  topicHeader.hidden = !hasMessages;
   stage.hidden = showList;
   messageList.hidden = !showList;
-  quickActions.hidden = !inSession;
+  quickActions.hidden = !hasMessages;
+  updateQuizBtn();
 
-  renderStageBubble(shown, inSession);
+  renderStage(messages);
 
+  if (!hasMessages) return;
+
+  topicNameEl.textContent = activeSession.topic || "학습 중";
   if (showList) {
     messageList.innerHTML =
       `<p class="day-divider">오늘</p>` +
-      shown
-        .map((m) => {
-          if (m.role === "user") return bubbleRowUser(m.text);
-          if (m.role === "check") return checkAlert();
-          return bubbleRowSensei(m.text);
-        })
-        .join("");
+      messages.map(renderMessage).join("");
     messageList.scrollTop = messageList.scrollHeight;
   }
 }
@@ -353,12 +369,16 @@ function typeStageBubble() {
 /** 하쿠의 대답을 기다리는 동안 캐릭터 화면에 "..." 점 세 개를 보여준다. */
 function showStageTyping() {
   stageBubble.classList.remove("is-typing");
-  stageBubble.className = "bubble bubble--tint typing-dots";
+  stageBubble.className = "chat-greeting typing-dots";
   stageBubble.setAttribute("aria-label", "하쿠가 생각하는 중");
   stageBubble.innerHTML = "<span></span><span></span><span></span>";
 }
 
-async function sendMessage(rawText) {
+/**
+ * 메시지를 보낸다.
+ * skipLevel: 버튼이 보내는 정해진 말("더 쉽게", "모르겠어")처럼 사용자의 설명이 아니면 true. 수준 판단을 하지 않는다.
+ */
+async function sendMessage(rawText, { skipLevel = false } = {}) {
   const text = rawText.trim();
   if (!text || isSending) return;
 
@@ -366,14 +386,6 @@ async function sendMessage(rawText) {
   // 지금 막 주고받는 말은 캐릭터와 실시간으로 대화하는 느낌으로 보여주기 위해서다.
   view = "character";
   hideAlert();
-
-  // 첫 인사 중이면, 이번에 보낸 말은 설명이 아니라 닉네임이다.
-  if (askingNickname) {
-    composerInput.value = "";
-    await submitNickname(text);
-    composerInput.focus();
-    return;
-  }
 
   setSending(true);
   composerInput.value = "";
@@ -414,6 +426,12 @@ async function sendMessage(rawText) {
     return;
   }
   render();
+
+  // 방금 한 설명이 어느 수준인지도 판단받는다. 하쿠의 대답과 따로 돌고, 기다리지 않는다.
+  if (!skipLevel) {
+    recordAnswerLevel(session, text, lastHakuText(historyBeforeThisTurn));
+  }
+
   showStageTyping();
 
   const result = await askHaku(text, historyBeforeThisTurn, nickname);
@@ -423,29 +441,31 @@ async function sendMessage(rawText) {
   render();
 
   if (result.ok) {
-    // 정오 판별에서 틀렸으면 하쿠는 대답하지 않는다(꼬리질문 없음).
-    // 하쿠 말풍선 대신 "틀렸어요." 알림 박스만 보여주고, 대화 기록에는 role "check" 로 남긴다.
-    // (기록에 남겨야 다음 질문과 퀴즈를 만들 때 Gemini 가 이 설명이 틀렸다는 걸 안다)
+    // 정오 판별에서 틀렸으면, 하쿠의 대답 앞에 "시스템 알림" 을 끼워 넣는다. (사용자 말 → 알림 → 하쿠 순서)
+    // 아래 addMessage 가 대화 전체를 저장하므로 여기서는 붙이기만 한다.
+    // 하쿠에게 보내는 대화 기록에서는 백엔드가 이 알림을 뺀다. (하쿠는 판정을 모른다)
     const isWrong = result.is_correct === false;
+    if (isWrong) {
+      session.messages.push({ role: "system", text: result.feedback, ts: Date.now() });
+    }
+
     let saveError = null;
     try {
-      await store.addMessage(session, isWrong ? "check" : "sensei", isWrong ? WRONG_TEXT : result.question);
+      await store.addMessage(session, "sensei", result.question);
     } catch (err) {
       saveError = err;
     }
 
     if (session === activeSession) {
       render();
-      if (!isWrong) {
-        if (view === "list") typeLastSenseiBubbleInList();
-        else typeStageBubble();
-      }
+      if (view === "list") typeLastSenseiBubbleInList();
+      else typeStageBubble();
       if (saveError) {
         showAlert(`방금 대답을 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${saveError.message})`);
       }
     }
 
-    // 틀린 설명과 모르는 개념도 따로 기록해 둔다. (화면에는 영향 없음)
+    // 정오 판별에서 틀렸으면 DB 에도 따로 기록해 둔다. (system_corrections, gap_records)
     if (isWrong) {
       recordWrongAnswer(session, text, result.feedback);
     }
@@ -473,6 +493,28 @@ function recordWrongAnswer(session, text, feedback) {
   }
 }
 
+/** 대화에서 하쿠가 마지막으로 한 말. 설명의 수준을 판단할 때 무엇에 대한 대답인지 같이 보낸다. 없으면 빈 문자열. */
+function lastHakuText(messages) {
+  return messages.findLast((m) => m.role === "sensei")?.text ?? "";
+}
+
+/**
+ * 방금 한 설명이 어느 학교급 수준(레벨 1~5)인지 백엔드(/judge-level)에 판단받아서
+ * answer_levels 에 기록하고, 내 수준(users.level_score / level_current)을 그쪽으로 조금 움직인다.
+ * 질문, "모르겠어", 한 단어로 답하는 질문의 답("무슨 색이야?" → "초록색")은 백엔드가 설명이 아니라고 알려주므로 기록하지 않는다.
+ * 실패해도 대화는 계속한다. (화면에는 영향 없음)
+ */
+function recordAnswerLevel(session, text, question) {
+  judgeLevel(text, question)
+    .then(async (result) => {
+      if (!result.ok) throw new Error(result.error);
+      if (!result.is_explanation) return;
+      await store.addAnswerLevel(session.id, text, result.level, result.reason);
+      await applyAnswerLevel(result.level);
+    })
+    .catch((err) => console.warn("설명의 수준을 기록하지 못했어요:", err));
+}
+
 composerForm.addEventListener("submit", (e) => {
   e.preventDefault();
   sendMessage(composerInput.value);
@@ -481,7 +523,6 @@ composerForm.addEventListener("submit", (e) => {
 newTopicBtn.addEventListener("click", () => {
   // 새 세션은 첫 메시지를 보낼 때 DB 에 만든다. 그 전까지는 빈 화면이다.
   activeSession = null;
-  introMessages = [];
   // 새로고침해도 빈 화면이 유지되게 주소에 표시한다. (?new 가 없으면 최근 세션이 열린다)
   window.history.replaceState(null, "", "?new");
   render();
@@ -542,12 +583,12 @@ easierBtn.addEventListener("click", () => {
   }
   // 내 수준(users.level_current)도 한 단계 내린다. 저장을 기다리지 않고 바로 하쿠에게 보낸다.
   lowerLevel().catch((err) => console.warn("수준을 낮추지 못했어요:", err));
-  sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?");
+  sendMessage(EASIER_MESSAGE, { skipLevel: true });
 });
-dontKnowBtn.addEventListener("click", () => sendMessage("음... 모르겠어. 힌트를 줄 수 있어?"));
+dontKnowBtn.addEventListener("click", () => sendMessage(DONT_KNOW_MESSAGE, { skipLevel: true }));
 
 quizBtn.addEventListener("click", () => {
-  if (!activeSession) return;
+  if (!activeSession || countExplanations(activeSession) < MIN_EXPLANATIONS_FOR_QUIZ) return;
   // 퀴즈 화면이 어느 세션으로 문제를 낼지 알 수 있게 세션 id 를 같이 넘긴다.
   const params = new URLSearchParams({ session: activeSession.id });
   if (activeSession.topic) params.set("topic", activeSession.topic);
@@ -555,72 +596,26 @@ quizBtn.addEventListener("click", () => {
 });
 
 // ─────────────────────────────────────────────
-// 하쿠의 첫 인사 — 닉네임 정하기.
-// 닉네임(users.nickname)이 아직 없으면 채팅에 들어오자마자 하쿠가 뭐라고 부를지 묻는다.
-// 이때 주고받는 말은 학습 대화가 아니므로 세션에 저장하지 않고(하쿠 / 퀴즈에게 안 넘어감)
-// 화면에만 보여준다(introMessages). 정한 닉네임은 DB 에 저장하고, 이후 하쿠에게 같이 보내서
-// 하쿠가 그 이름으로 부르게 한다 (app.py 의 ask_haku).
+// 닉네임: 아직 정하지 않았으면 이름 정하기 화면(nickname.html)에서 먼저 정하고 온다.
+// 하쿠에게 질문할 때 같이 보내서 하쿠가 그 이름으로 부르게 한다 (app.py 의 ask_haku).
+// 빈 화면 인사말은 시안 문구 그대로 "안녕!" 고정이라 여기서는 쓰지 않는다.
 // ─────────────────────────────────────────────
-const NICKNAME_PLACEHOLDER = "예) 지수, 민준, 선생님...";
-const defaultPlaceholder = composerInput.placeholder;
 
-/** 화면에만 보이는 첫 인사 말풍선을 하나 붙인다. 하쿠의 말이면 타이핑 효과로 보여준다. */
-function addIntro(role, text) {
-  introMessages.push({ role, text });
-  render();
-  // 첫 인사는 세션이 없는 상태(activeSession === null)에서 진행되므로 항상 캐릭터 화면에 뜬다.
-  if (role === "sensei") typeStageBubble();
-}
-
-/** "지수라고" / "민준이라고": 이름 끝 글자에 받침이 있으면 "이라고" 를 붙인다. */
-function callName(name) {
-  const code = name.charCodeAt(name.length - 1) - 0xac00;
-  const isHangul = code >= 0 && code <= 0xd7a3 - 0xac00;
-  return isHangul && code % 28 === 0 ? `${name}라고` : `${name}이라고`;
-}
-
-function startNicknameIntro() {
-  askingNickname = true;
-  // 첫 인사는 빈 화면에서 시작한다. (보던 세션은 학습 기록에 그대로 남아 있다)
-  activeSession = null;
-  composerInput.placeholder = NICKNAME_PLACEHOLDER;
-  addIntro("sensei", "안녕! 나는 하쿠야 🦜 앞으로 같이 공부할 텐데, 하쿠가 뭐라고 불러주면 좋아?");
-}
-
-async function submitNickname(name) {
-  addIntro("user", name);
-
-  if (name.length > NICKNAME_MAX) {
-    addIntro("sensei", `음… 조금 더 짧게 알려줄래? (${NICKNAME_MAX}글자까지)`);
-    return;
-  }
-
-  setSending(true);
-  try {
-    await saveNickname(name);
-  } catch (err) {
-    showAlert(`닉네임을 저장하지 못했어요. 다시 입력해주세요. (${err.message})`);
-    setSending(false);
-    return;
-  }
-
-  nickname = name;
-  askingNickname = false;
-  composerInput.placeholder = defaultPlaceholder;
-  addIntro("sensei", `알겠어! 앞으로 ${callName(name)} 부를게 🦜 오늘은 어떤 걸 가르쳐 줄 거야?`);
-  setSending(false);
-}
-
+/** 닉네임을 불러온다. 아직 없으면 이름 정하기 화면으로 보내고 true 를 돌려준다. */
 async function loadNickname() {
   try {
     nickname = await getNickname();
   } catch (err) {
-    // 못 불러와도 채팅은 할 수 있어야 하므로, 첫 인사 없이 그냥 진행한다.
+    // 못 불러와도 채팅은 할 수 있어야 하므로, 닉네임 없이 그냥 진행한다.
     console.warn("닉네임을 불러오지 못했어요:", err);
-    return;
+    return false;
   }
 
-  if (!nickname) startNicknameIntro();
+  if (!nickname) {
+    window.location.replace(NICKNAME_PAGE);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -645,34 +640,29 @@ async function loadSession() {
   render();
 }
 
+// 퀴즈 화면이 "낼 문제가 없다" 며 돌려보낼 때 주소에 붙이는 값 (quiz.js) 과 그때 띄울 알림.
+const QUIZ_NOTICES = {
+  "need-more": "아직 문제를 만들 수 없어요. 조금만 더 하쿠와 대화해 주세요.",
+};
+
 async function init() {
+  // 주소의 ?notice= 는 세션을 불러오면서 주소가 바뀌기 전에 먼저 읽어 둔다.
+  const quizNotice = QUIZ_NOTICES[new URLSearchParams(window.location.search).get("notice")];
   render();
 
-  // 불러오는 동안 입력을 막는다. (그 사이에 보낸 말이 닉네임 대신 하쿠에게 가지 않게)
+  // 불러오는 동안 입력을 막는다.
   setSending(true);
   try {
-    await loadNickname();
-    // 닉네임을 묻는 중이면(첫 인사) 빈 화면에서 시작하므로 세션은 불러오지 않는다.
-    if (!askingNickname) await loadSession();
+    // 닉네임이 없으면 이름 정하기 화면으로 넘어가므로 세션은 불러오지 않는다.
+    const leaving = await loadNickname();
+    if (!leaving) await loadSession();
   } finally {
     setSending(false);
     composerInput.focus();
   }
+
+  // 알림은 저장하지 않는다. loadSession() 이 주소를 ?session= 만 남기고 바꾸므로 새로고침하면 다시 뜨지 않는다.
+  if (quizNotice) showAlert(quizNotice);
 }
 
 document.addEventListener("DOMContentLoaded", init);
-
-// ─────────────────────────────────────────────
-// (추가) 말로 보내기 — 녹음과 마이크 버튼은 voice.js 에 있다.
-// 여기서는 채팅 화면의 요소와 함수만 넘겨서 연결한다.
-// ─────────────────────────────────────────────
-import { setupVoiceInput } from "./voice.js";
-
-setupVoiceInput({
-  sendBtn,
-  composerInput,
-  showAlert,
-  headerMicBtn: idleHeader.querySelector('button[aria-label="음성으로 설명하기"]'),
-  isSending: () => isSending,
-  sendMessage,
-});

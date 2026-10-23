@@ -5,12 +5,17 @@
 //
 //   테이블              들어가는 것
 //   sessions            학습 세션 하나. 대화는 haku_log 에 [{role, text, ts}] 배열로 통째로 저장
-//                       role: "user"(나) / "sensei"(하쿠) / "check"(정오 판별의 "틀렸어요." 알림)
+//                       role: "user"(나) / "sensei"(하쿠) / "system"(정오 판별 알림, 어디가 틀렸는지)
+//                             "check" 는 예전 방식의 정오 판별 알림("틀렸어요." 만). system 과 똑같이 다룬다.
 //   quiz_items          퀴즈 문제 하나 (세션별, 만든 순서대로) + 사용자가 쓴 답
 //   system_corrections  정오 판별에서 "틀렸어요" 가 나온 설명과 피드백
 //   gap_records         모르는 개념(= 세션 주제)별로 틀린 횟수 / "더 쉽게" 누른 횟수
+//   answer_levels       설명마다 어느 학교급 수준인지 판단한 결과 (레벨 1~5 + 근거)
 //
-// 닉네임(users 테이블)은 user.js 가 다룬다.
+// 기록 화면에서 세션을 삭제하면(hideSession) DB 에서 지우지 않고 sessions.ended_at 에 시각만 적는다.
+// 사용자 화면(목록 / 채팅 / 퀴즈 / 통계)에서만 안 보이고, 대화·퀴즈·틀린 설명 기록은 DB 에 그대로 남는다.
+//
+// 닉네임과 수준(users 테이블)은 user.js 가 다룬다.
 // ─────────────────────────────────────────────
 
 import { supabase } from "./supabase.js";
@@ -30,7 +35,14 @@ for (const key of ["sensei.sessions.v1", "sensei.quizzes.v1", "sensei.profile.v1
 // 세션 (주제 + 대화)
 // ─────────────────────────────────────────────
 
-const SESSION_COLUMNS = "id, topic, haku_log, started_at, updated_at";
+// ended_at: 기획서의 테이블 설계에 있던 "세션 종료 시각" 칸. 다른 곳에서는 쓰지 않아서,
+// 사용자가 기록 화면에서 삭제(숨김)한 시각으로 쓴다. 비어 있으면 보이는 세션이다.
+const SESSION_COLUMNS = "id, topic, haku_log, started_at, updated_at, ended_at";
+
+/** 사용자가 기록 화면에서 삭제(숨김)한 세션인지. */
+function isHidden(row) {
+  return Boolean(row.ended_at);
+}
 
 /** DB 의 sessions 행을 화면 코드가 쓰는 모양 {id, topic, messages, createdAt, updatedAt} 으로 바꾼다. */
 function toSession(row) {
@@ -52,7 +64,7 @@ export function deriveTopic(text) {
   return `${trimmed.slice(0, TOPIC_MAX_LENGTH)}…`;
 }
 
-/** 내 세션 전부. 최근에 대화한 세션이 먼저 온다. 대화가 하나도 없는 세션은 뺀다. */
+/** 내 세션 전부. 최근에 대화한 세션이 먼저 온다. 대화가 하나도 없는 세션과 숨긴 세션은 뺀다. */
 export async function getAllSessions() {
   const user = await requireUser();
   const { data, error } = await supabase
@@ -61,7 +73,7 @@ export async function getAllSessions() {
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
   if (error) throw error;
-  return data.map(toSession).filter((s) => s.messages.length > 0);
+  return data.filter((row) => !isHidden(row)).map(toSession).filter((s) => s.messages.length > 0);
 }
 
 /** 가장 최근에 대화한 세션. 없으면 null. (채팅 화면을 그냥 열었을 때 이어서 보여줄 세션) */
@@ -70,7 +82,7 @@ export async function getLatestSession() {
   return sessions[0] ?? null;
 }
 
-/** 세션 하나. 없거나 내 세션이 아니면 null. */
+/** 세션 하나. 없거나, 내 세션이 아니거나, 숨긴 세션이면 null. */
 export async function getSession(id) {
   if (!id) return null;
   const user = await requireUser();
@@ -83,7 +95,7 @@ export async function getSession(id) {
   // 주소의 ?session= 값이 uuid 모양이 아니면 DB 가 22P02 오류를 낸다. 없는 세션으로 본다.
   if (error?.code === "22P02") return null;
   if (error) throw error;
-  return data ? toSession(data) : null;
+  return data && !isHidden(data) ? toSession(data) : null;
 }
 
 /**
@@ -135,6 +147,22 @@ export async function addMessage(session, role, text) {
   return saveSession(session);
 }
 
+/**
+ * 세션을 사용자 화면에서 숨긴다. (기록 화면의 휴지통 버튼)
+ * DB 에서 지우지 않고 ended_at 에 지금 시각만 적는다. 대화, 퀴즈, 틀린 설명, 취약 개념 기록은 그대로 남는다.
+ */
+export async function hideSession(id) {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("sessions")
+    .update({ ended_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id");
+  if (error) throw error;
+  if (data.length === 0) throw new Error("이미 삭제됐거나 내 기록이 아니에요.");
+}
+
 /** 프로필 화면의 학습 통계. */
 export async function getStats() {
   const sessions = await getAllSessions();
@@ -152,9 +180,12 @@ export async function getStats() {
 // 퀴즈 (quiz_items: 문제 하나가 한 행)
 // ─────────────────────────────────────────────
 
-const QUIZ_COLUMNS = "id, type, question, answers, choices, user_answer, message_count";
+const QUIZ_COLUMNS = "id, type, question, answers, choices, user_answer, message_count, is_correct";
 
-/** DB 의 quiz_items 행을 화면 코드가 쓰는 문제 모양 {id, type, question, answers, choices} 으로 바꾼다. */
+/**
+ * DB 의 quiz_items 행을 화면 코드가 쓰는 문제 모양 {id, type, question, answers, choices, isCorrect} 으로 바꾼다.
+ * isCorrect 는 채점 결과. 아직 채점하지 않았으면 null.
+ */
 function toQuizItem(row) {
   return {
     id: row.id,
@@ -162,6 +193,7 @@ function toQuizItem(row) {
     question: row.question,
     answers: row.answers ?? [],
     choices: row.choices ?? undefined,
+    isCorrect: row.is_correct ?? null,
   };
 }
 
@@ -200,6 +232,15 @@ export async function addQuizItems(sessionId, items, messageCount) {
   const { data, error } = await supabase.from("quiz_items").insert(rows).select(QUIZ_COLUMNS);
   if (error) throw error;
   return data.map(toQuizItem);
+}
+
+/** 채점 결과(맞았는지)를 저장한다. 채점할 때의 답도 같이 저장해서, 채점한 답과 저장된 답이 어긋나지 않게 한다. */
+export async function saveQuizGrade(itemId, answer, isCorrect) {
+  const { error } = await supabase
+    .from("quiz_items")
+    .update({ user_answer: answer, is_correct: isCorrect })
+    .eq("id", itemId);
+  if (error) throw error;
 }
 
 /** 문제 하나에 사용자가 쓴(고른) 답을 저장한다. */
@@ -267,4 +308,20 @@ export async function recordGap(concept, kind) {
     last_seen: today(),
   });
   if (insertError) throw insertError;
+}
+
+// ─────────────────────────────────────────────
+// 대답 수준 (answer_levels: 설명 하나가 한 행)
+// ─────────────────────────────────────────────
+
+/**
+ * 설명 하나의 수준을 기록한다. 백엔드(/judge-level)가 판단한 레벨(1~5)과 그 근거(reason).
+ * 내 지금 수준(users.level_current)을 움직이는 것은 user.js 의 applyAnswerLevel 이 한다.
+ */
+export async function addAnswerLevel(sessionId, answer, level, reason) {
+  const user = await requireUser();
+  const { error } = await supabase
+    .from("answer_levels")
+    .insert({ user_id: user.id, session_id: sessionId, answer, level, reason });
+  if (error) throw error;
 }

@@ -12,11 +12,12 @@
 // ─────────────────────────────────────────────
 
 // 캐시에 넣는 파일 목록이나 방식을 바꾸면 숫자를 올린다. 예전 캐시는 activate 에서 지운다.
-const CACHE_NAME = "sensei-v2";
+const CACHE_NAME = "sensei-v3";
 
 // 설치할 때 미리 받아 두는 파일. 하나가 없어도 나머지는 받는다.
 const PRECACHE = [
   "./src/pages/index.html",
+  "./src/pages/nickname.html",
   "./src/pages/survey.html",
   "./src/pages/chat.html",
   "./src/pages/history.html",

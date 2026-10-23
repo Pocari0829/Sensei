@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>시작 설문 · SENSEI</title>
+    <meta name="description" content="하쿠가 질문 난이도를 맞출 수 있게 간단한 설문에 답해주세요." />
+    <link rel="stylesheet" href="../styles/style.css" />
+    <link rel="manifest" href="../../manifest.json" />
+    <meta name="theme-color" content="#4f46c8" />
+    <link rel="apple-touch-icon" href="../../public/icons/icon-180.png" />
+  </head>
+  <body>
+    <div class="phone">
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="statusbar__icons">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="battery"></span>
+        </div>
+      </div>
+
+      <!-- 처음 로그인했을 때 한 번만 보는 화면 (chat.js 가 설문 전이면 여기로 보낸다) -->
+      <form class="scroll" id="survey-form" style="padding: 16px 20px 12px" novalidate>
+        <div>
+          <h1 class="quiz-title">시작하기 전에</h1>
+          <p class="quiz-sub">하쿠가 질문 난이도를 맞출 수 있게 5가지만 알려주세요.</p>
+        </div>
+
+        <div class="card q-card" role="group">
+          <p class="q-card__label">Q 1 · 학습 목적</p>
+          <div class="q-choices">
+            <label class="q-choice"><input type="radio" name="purpose" value="초중고등학생" /><span class="q-choice__num">1</span>초중고등학생</label>
+            <label class="q-choice"><input type="radio" name="purpose" value="대학생" /><span class="q-choice__num">2</span>대학생</label>
+            <label class="q-choice"><input type="radio" name="purpose" value="자격증 준비" /><span class="q-choice__num">3</span>자격증 준비</label>
+            <label class="q-choice"><input type="radio" name="purpose" value="자기계발" /><span class="q-choice__num">4</span>자기계발</label>
+            <label class="q-choice"><input type="radio" name="purpose" value="기타" /><span class="q-choice__num">5</span>기타</label>
+          </div>
+        </div>
+
+        <div class="card q-card" role="group">
+          <p class="q-card__label">Q 2 · 지금 내 수준</p>
+          <div class="q-choices">
+            <label class="q-choice"><input type="radio" name="level" value="1" /><span class="q-choice__num">1</span>완전 초보</label>
+            <label class="q-choice"><input type="radio" name="level" value="2" /><span class="q-choice__num">2</span>기초는 알아요</label>
+            <label class="q-choice"><input type="radio" name="level" value="3" /><span class="q-choice__num">3</span>보통</label>
+            <label class="q-choice"><input type="radio" name="level" value="4" /><span class="q-choice__num">4</span>꽤 잘 알아요</label>
+            <label class="q-choice"><input type="radio" name="level" value="5" /><span class="q-choice__num">5</span>심화 수준</label>
+          </div>
+        </div>
+
+        <div class="card q-card" role="group">
+          <p class="q-card__label">Q 3 · 주로 공부하는 과목·분야</p>
+          <input type="text" name="subject" maxlength="40" placeholder="예) 생명과학, 민법, 마케팅" autocomplete="off" />
+        </div>
+
+        <div class="card q-card" role="group">
+          <p class="q-card__label">Q 4 · 하루 목표 학습 시간</p>
+          <div class="q-choices">
+            <label class="q-choice"><input type="radio" name="daily_time" value="10분 이하" /><span class="q-choice__num">1</span>10분 이하</label>
+            <label class="q-choice"><input type="radio" name="daily_time" value="10~30분" /><span class="q-choice__num">2</span>10~30분</label>
+            <label class="q-choice"><input type="radio" name="daily_time" value="30분 이상" /><span class="q-choice__num">3</span>30분 이상</label>
+          </div>
+        </div>
+
+        <div class="card q-card" role="group">
+          <p class="q-card__label">Q 5 · 가장 큰 학습 고민</p>
+          <div class="q-choices">
+            <label class="q-choice"><input type="radio" name="concern" value="알 것 같은데 시험에서 틀림" /><span class="q-choice__num">1</span>알 것 같은데 시험에서 틀림</label>
+            <label class="q-choice"><input type="radio" name="concern" value="금방 잊음" /><span class="q-choice__num">2</span>금방 잊음</label>
+            <label class="q-choice"><input type="radio" name="concern" value="설명이 안 됨" /><span class="q-choice__num">3</span>설명이 안 됨</label>
+            <label class="q-choice"><input type="radio" name="concern" value="어디가 약점인지 모름" /><span class="q-choice__num">4</span>어디가 약점인지 모름</label>
+          </div>
+        </div>
+
+        <p class="login-error" id="survey-error" role="alert" style="margin-top: 12px" hidden></p>
+      </form>
+
+      <div class="quiz-footer">
+        <span class="pager-text" id="survey-progress">0 / 5</span>
+        <button type="submit" form="survey-form" class="pill pill--primary" id="survey-submit" style="padding: 10px 20px; font-size: 13px">
+          시작하기
+        </button>
+      </div>
+    </div>
+
+    <script type="module" src="../scripts/guard.js"></script>
+    <script type="module" src="../scripts/survey.js"></script>
+    <script type="module" src="../scripts/pwa.js"></script>
+  </body>
+</html>

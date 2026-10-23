@@ -15,7 +15,9 @@ export const NICKNAME_MAX = 16;
  * (이메일 없이 가입한 카카오 계정 등이 저장할 때마다 DB 의 이메일을 빈 값으로 덮어쓰지 않게)
  */
 function userRow(user, fields) {
-  return user.email ? { id: user.id, email: user.email, ...fields } : { id: user.id, ...fields };
+  return user.email
+    ? { id: user.id, email: user.email, ...fields }
+    : { id: user.id, ...fields };
 }
 
 /** 내 닉네임. 아직 정하지 않았으면 null. */
@@ -37,7 +39,9 @@ export async function getNickname() {
  */
 export async function saveNickname(nickname) {
   const user = await requireUser();
-  const { error } = await supabase.from("users").upsert(userRow(user, { nickname }));
+  const { error } = await supabase
+    .from("users")
+    .upsert(userRow(user, { nickname }));
   if (error) throw error;
 }
 

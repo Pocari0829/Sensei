@@ -32,15 +32,23 @@ function sessionCard(session, isActive) {
   const statusClass = isActive ? "status status--active" : "status";
   const cardClass = isActive ? "session card card--tinted" : "session card";
 
+  // 카드 전체가 링크이고, 오른쪽 끝의 휴지통 버튼만 따로 눌린다. (버튼을 링크 안에 넣으면 누를 때 채팅으로 넘어가 버린다)
   return `
-    <a class="${cardClass}" href="./chat.html?session=${encodeURIComponent(session.id)}">
-      <img src="../../public/mascot.png" alt="" />
-      <div class="session__body">
-        <p class="session__topic">${topic}</p>
-        <p class="session__meta">${meta}</p>
-      </div>
-      <span class="${statusClass}">${statusLabel}</span>
-    </a>`;
+    <div class="${cardClass}">
+      <a class="session__link" href="./chat.html?session=${encodeURIComponent(session.id)}">
+        <img src="../../public/mascot.png" alt="" />
+        <div class="session__body">
+          <p class="session__topic">${topic}</p>
+          <p class="session__meta">${meta}</p>
+        </div>
+        <span class="${statusClass}">${statusLabel}</span>
+      </a>
+      <button type="button" class="session__delete" data-delete="${escapeHtml(session.id)}" aria-label="${topic} 학습 기록 삭제">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+        </svg>
+      </button>
+    </div>`;
 }
 
 function emptyState() {
@@ -98,6 +106,26 @@ async function render() {
 
   listEl.innerHTML = html;
 }
+
+// 휴지통 버튼: 물어본 뒤 세션을 목록에서 숨기고 다시 그린다. (DB 에서는 지우지 않는다. store.hideSession 참고)
+listEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-delete]");
+  if (!btn) return;
+
+  const topic = btn.closest(".session")?.querySelector(".session__topic")?.textContent ?? "";
+  if (!window.confirm(`'${topic}' 학습 기록을 삭제할까요?
+목록과 채팅에서 더 이상 볼 수 없어요.`)) return;
+
+  btn.disabled = true;
+  try {
+    await store.hideSession(btn.dataset.delete);
+  } catch (err) {
+    btn.disabled = false;
+    window.alert(`삭제하지 못했어요. ${err.message}`);
+    return;
+  }
+  render();
+});
 
 // "새 세션" 버튼: 채팅 화면을 빈 화면(?new)으로 연다.
 // 세션은 첫 메시지를 보낼 때 DB 에 만들어진다. (빈 세션이 쌓이지 않게)

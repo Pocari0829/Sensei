@@ -113,6 +113,9 @@ function quizCard(item, index) {
 // 안내 카드("만드는 중이에요..." 같은 글)는 화면에 하나만 있고, 이 id 로 찾는다.
 const NOTE_ID = "quiz-note";
 
+// 시험지에 있어야 하는 최소 문제 수. 이보다 적으면 대화가 그대로여도 모자란 만큼 만든다.
+const MIN_QUIZ_ITEMS = 1;
+
 function infoCard(text) {
   return `
     <div class="card q-card" id="${NOTE_ID}">
@@ -196,7 +199,7 @@ function setNote(text) {
  * 안내 카드 자리에 새 문제 카드(from 번째부터)를 끼워 넣는다.
  * 전체를 다시 그리지 않으므로, 예전 문제에 입력 중이던 답과 커서가 그대로 유지된다.
  */
-function appendNewCards(quiz, from) {
+function appendNewCards(quiz, from, scroll = from > 0) {
   const note = document.getElementById(NOTE_ID);
   if (!note) {
     showQuiz(quiz);
@@ -215,7 +218,8 @@ function appendNewCards(quiz, from) {
   bindAnswers(quiz, from);
 
   // 예전 문제 아래에 붙었으면, 새 문제가 보이도록 그쪽으로 내려간다.
-  if (from > 0) {
+  // (한 번에 여러 문제를 만들 때 두 번째부터는 내려가지 않는다. 첫 문제를 읽는 중일 수 있으므로)
+  if (scroll) {
     document.querySelectorAll(".q-card")[from]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
@@ -243,38 +247,78 @@ async function loadQuiz() {
     return;
   }
 
-  // 마지막으로 문제를 만든 뒤에 대화가 더 늘어났을 때만 새 문제를 만든다.
-  // 대화가 그대로면(새로고침, 그냥 다시 들어옴) 저장된 문제만 보여주고 Gemini 를 부르지 않는다.
+  // 만들 문제 수:
+  //   시험지가 MIN_QUIZ_ITEMS 개보다 적으면 → 모자란 만큼 (대화가 그대로여도. 예전에 하나만 만들어졌을 때 채운다)
+  //   충분하면 → 마지막으로 문제를 만든 뒤에 대화가 늘었을 때만 1개
+  //   대화도 그대로면(새로고침, 그냥 다시 들어옴) 저장된 문제만 보여주고 Gemini 를 부르지 않는다.
   const hasNewTalk = history.length > quiz.messageCount;
-  if (!hasNewTalk) {
+  const toMake = Math.max(MIN_QUIZ_ITEMS - quiz.items.length, hasNewTalk ? 1 : 0);
+  if (toMake === 0) {
     showQuiz(quiz);
     return;
   }
 
   // 예전 문제는 먼저 그대로 보여주고, 그 아래에 "만드는 중" 안내를 붙인다.
-  const before = quiz.items.length;
-  showQuiz(
-    quiz,
-    before > 0
-      ? "새로 나눈 대화로 문제를 하나 더 만드는 중이에요..."
-      : "대화를 바탕으로 문제를 만드는 중이에요...",
-  );
+  // 백엔드는 한 번에 한 문제를 만드므로 toMake 번 부른다.
+  // 한 문제가 만들어질 때마다 바로 보여주고, 다음 문제는 그 아래에서 이어서 만든다.
+  const firstNote =
+    quiz.items.length > 0 ? "문제를 더 만드는 중이에요..." : "대화를 바탕으로 문제를 만드는 중이에요...";
+  showQuiz(quiz, firstNote);
 
+  let notice = "";
+  for (let made = 0; made < toMake; made += 1) {
+    if (made > 0) {
+      document.querySelectorAll(".q-card")[quiz.items.length - 1]?.insertAdjacentHTML(
+        "afterend",
+        infoCard("다음 문제를 만드는 중이에요..."),
+      );
+    }
+
+    const result = await addOneQuizItem(session, quiz, history, made === 0 && quiz.items.length > 0);
+    if (result.notice) notice = result.notice;
+
+    // 시험지가 비어 있는데 대화에 낼 만한 내용이 없으면, 채팅으로 돌려보내서 더 설명하게 한다.
+    // (chat.js 가 ?notice=need-more 를 보고 "아직 문제를 만들 수 없어요…" 알림을 띄운다)
+    if (result.empty && quiz.items.length === 0) {
+      const params = new URLSearchParams({ session: session.id, notice: "need-more" });
+      window.location.replace(`./chat.html?${params}`);
+      return;
+    }
+
+    // 실패하거나 낼 내용이 없으면 거기서 멈춘다. 이미 만든 문제는 화면과 DB 에 그대로 남는다.
+    if (!result.ok) {
+      setNote(result.error);
+      return;
+    }
+  }
+
+  // 마지막 수단 모델로 만든 문제가 있었으면 맨 아래에 안내 카드를 붙인다. (저장하지 않으므로 다시 들어오면 사라진다)
+  if (notice) {
+    const cards = document.querySelectorAll(".q-card");
+    cards[cards.length - 1]?.insertAdjacentHTML("afterend", infoCard(notice));
+  }
+}
+
+/**
+ * 문제를 하나 만들어 DB 에 저장하고, 안내 카드 자리에 그린다. scroll 이면 새 문제 쪽으로 화면을 내린다.
+ * 돌려주는 것: {ok: true, notice?} | {ok: false, error, empty?}
+ *   empty 는 대화에서 문제로 낼 만한 내용을 찾지 못했을 때 true 다.
+ *   notice 는 백엔드가 마지막 수단 모델로 만들었을 때의 "오늘 사용량이 많아서…" 안내다.
+ */
+async function addOneQuizItem(session, quiz, history, scroll) {
   // 이미 낸 문제를 같이 보내서, 겹치지 않는 새 문제를 받는다.
   // 문제 유형(빈칸 주관식 / 객관식)은 정해서 보내지 않는다. 백엔드의 Gemini 가 대화 내용에 더 맞는 쪽을 고른다.
   const result = await generateQuiz(history, quiz.items.map((item) => item.question));
 
   // 실패해도 예전 문제는 화면에 그대로 남는다. 저장도 바꾸지 않으므로 다음에 다시 시도된다.
   if (!result.ok) {
-    setNote(result.error || "문제를 만들지 못했어요. 다시 시도해주세요.");
-    return;
+    return { ok: false, error: result.error || "문제를 만들지 못했어요. 다시 시도해주세요." };
   }
 
   const newItems = result.items ?? [];
-
   if (newItems.length === 0) {
-    setNote("대화에서 문제를 만들 만한 내용을 찾지 못했어요.");
-    return;
+    const error = "대화에서 문제를 만들 만한 내용을 더 찾지 못했어요.";
+    return { ok: false, empty: true, error: result.notice ? `${error} ${result.notice}` : error };
   }
 
   // 새 문제를 DB 에 저장한다. 실패하면 문제를 보여주지 않는다.
@@ -283,14 +327,15 @@ async function loadQuiz() {
   try {
     savedItems = await store.addQuizItems(session.id, newItems, history.length);
   } catch (err) {
-    setNote(`문제를 저장하지 못했어요. 잠시 후 다시 들어와 주세요. (${err.message})`);
-    return;
+    return { ok: false, error: `문제를 저장하지 못했어요. 잠시 후 다시 들어와 주세요. (${err.message})` };
   }
 
   // 예전 문제는 그대로 두고 뒤에 추가만 한다.
+  const before = quiz.items.length;
   quiz.items.push(...savedItems);
   quiz.messageCount = history.length;
-  appendNewCards(quiz, before);
+  appendNewCards(quiz, before, scroll);
+  return { ok: true, notice: result.notice };
 }
 
 document.addEventListener("DOMContentLoaded", loadQuiz);

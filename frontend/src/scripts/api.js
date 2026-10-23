@@ -10,9 +10,10 @@ export const API_BASE = "http://127.0.0.1:5000";
  * 하쿠에게 방금 한 설명을 보내고 꼬리질문을 받아온다.
  *
  * @param {string} message - 사용자가 방금 입력한 문장.
- * @param {{role: "user"|"sensei", text: string}[]} history - 지금까지의 대화 기록 (이번 message는 제외).
+ * @param {{role: "user"|"sensei"|"system", text: string}[]} history - 지금까지의 대화 기록 (이번 message는 제외).
  * @param {string|null} nickname - 하쿠가 사용자를 부를 이름. 없으면 이름 없이 대화한다.
- * @returns {Promise<{ok: true, question: string} | {ok: false, error: string}>}
+ * @returns {Promise<{ok: true, question: string, is_correct: boolean, feedback?: string} | {ok: false, error: string}>}
+ *   is_correct 가 false 면 feedback 이 정오 판별 알림이다. (하쿠의 말이 아니라 "시스템 알림" 박스에 띄운다)
  */
 export async function askHaku(message, history = [], nickname = null) {
   try {
@@ -88,10 +89,11 @@ export function checkSystem(message, history = []) {
  * 문제 유형은 정해서 보내지 않는다. 백엔드의 Gemini 가 대화 내용을 보고
  * "blank"(빈칸 주관식, 직접 입력) / "choice"(객관식, 보기 4개) 중 더 맞는 쪽을 골라서 만든다.
  *
- * @param {{role: "user"|"sensei", text: string}[]} history - 대화 전체.
+ * @param {{role: "user"|"sensei"|"system", text: string}[]} history - 대화 전체.
  * @param {string[]} previous - 이미 낸 문제의 지문들. 보내면 이것과 겹치지 않는 새 문제를 만든다.
- * @returns {Promise<{ok: true, items: {type: "blank"|"choice", question: string, answers: string[], choices?: string[]}[]} | {ok: false, error: string}>}
+ * @returns {Promise<{ok: true, items: {type: "blank"|"choice", question: string, answers: string[], choices?: string[]}[], notice?: string} | {ok: false, error: string}>}
  *   items 는 보통 1개이고, 대화에 문제로 낼 내용이 없으면 빈 목록이다.
+ *   notice 는 백엔드가 마지막 수단 모델로 만들었을 때 화면에 띄울 안내 문구다.
  */
 export function generateQuiz(history = [], previous = []) {
   return postJson("/generate-quiz", { history, previous });

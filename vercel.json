@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "node build_config.mjs",
+  "outputDirectory": "frontend",
+  "redirects": [{ "source": "/", "destination": "/src/pages/index.html", "permanent": false }],
+  "headers": [
+    {
+      "source": "/(service-worker\\.js|manifest\\.json|src/scripts/config\\.js)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    }
+  ]
+}

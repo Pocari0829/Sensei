@@ -1,0 +1,2 @@
+# Railway / Render 는 맨 위 폴더의 requirements.txt 로 패키지를 설치한다. 실제 목록은 backend/requirements.txt
+-r backend/requirements.txt

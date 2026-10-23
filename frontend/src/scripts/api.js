@@ -111,3 +111,14 @@ export function generateQuiz(history = [], previous = []) {
 export function judgeLevel(message, question = "") {
   return postJson("/judge-level", { message, question });
 }
+
+/**
+ * 빈칸 주관식 답을 채점한다. 표기만 다른 답("S" 와 "황")도 정답으로 본다.
+ * (객관식과, 글자가 정답과 똑같은 답은 quiz.js 가 직접 채점하므로 보내지 않아도 된다)
+ *
+ * @param {{question: string, answers: string[], user_answer: string}[]} items
+ * @returns {Promise<{ok: true, results: boolean[]} | {ok: false, error: string}>}  results 는 items 와 같은 순서.
+ */
+export function gradeQuiz(items) {
+  return postJson("/grade-quiz", { items });
+}

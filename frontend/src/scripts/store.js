@@ -180,9 +180,12 @@ export async function getStats() {
 // 퀴즈 (quiz_items: 문제 하나가 한 행)
 // ─────────────────────────────────────────────
 
-const QUIZ_COLUMNS = "id, type, question, answers, choices, user_answer, message_count";
+const QUIZ_COLUMNS = "id, type, question, answers, choices, user_answer, message_count, is_correct";
 
-/** DB 의 quiz_items 행을 화면 코드가 쓰는 문제 모양 {id, type, question, answers, choices} 으로 바꾼다. */
+/**
+ * DB 의 quiz_items 행을 화면 코드가 쓰는 문제 모양 {id, type, question, answers, choices, isCorrect} 으로 바꾼다.
+ * isCorrect 는 채점 결과. 아직 채점하지 않았으면 null.
+ */
 function toQuizItem(row) {
   return {
     id: row.id,
@@ -190,6 +193,7 @@ function toQuizItem(row) {
     question: row.question,
     answers: row.answers ?? [],
     choices: row.choices ?? undefined,
+    isCorrect: row.is_correct ?? null,
   };
 }
 
@@ -228,6 +232,15 @@ export async function addQuizItems(sessionId, items, messageCount) {
   const { data, error } = await supabase.from("quiz_items").insert(rows).select(QUIZ_COLUMNS);
   if (error) throw error;
   return data.map(toQuizItem);
+}
+
+/** 채점 결과(맞았는지)를 저장한다. 채점할 때의 답도 같이 저장해서, 채점한 답과 저장된 답이 어긋나지 않게 한다. */
+export async function saveQuizGrade(itemId, answer, isCorrect) {
+  const { error } = await supabase
+    .from("quiz_items")
+    .update({ user_answer: answer, is_correct: isCorrect })
+    .eq("id", itemId);
+  if (error) throw error;
 }
 
 /** 문제 하나에 사용자가 쓴(고른) 답을 저장한다. */

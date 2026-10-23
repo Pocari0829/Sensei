@@ -814,6 +814,24 @@ button.oauth {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+/* 채점 결과 (quiz.js 의 applyGrades) */
+.q-card--correct {
+  border-left-color: #2da44e;
+}
+.q-card--wrong {
+  border-left-color: #e5484d;
+}
+.q-result {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.q-card--correct .q-result {
+  color: #1a7f37;
+}
+.q-card--wrong .q-result {
+  color: #c8363b;
+}
 .quiz-footer {
   display: flex;
   flex-shrink: 0;

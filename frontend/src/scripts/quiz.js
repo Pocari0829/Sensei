@@ -26,10 +26,12 @@ document.addEventListener("DOMContentLoaded", () => {
 // (import 는 모듈 맨 위가 아니어도 동작한다)
 // ─────────────────────────────────────────────
 import * as store from "./store.js";
-import { generateQuiz } from "./api.js";
+import { generateQuiz, gradeQuiz } from "./api.js";
 
 // 나중에 채점할 때 쓰려고 받은 정답을 여기 보관해둔다. (화면에는 안 보임)
 let currentQuizItems = [];
+// 지금 화면의 시험지 {items, userAnswers, messageCount}. [채점하기] 가 쓴다.
+let currentQuiz = null;
 
 // ─────────────────────────────────────────────
 // 답 저장: 사용자가 쓴(고른) 답을 문제마다 DB(quiz_items.user_answer)에 저장한다.
@@ -183,10 +185,12 @@ function bindAnswers(quiz, from = 0) {
 
 /** 저장된 문제를 전부 그린다. note 가 있으면 맨 아래에 안내 카드를 하나 덧붙인다. */
 function showQuiz(quiz, note = "") {
+  currentQuiz = quiz;
   currentQuizItems = quiz.items;
   replaceCards(quiz.items.map(quizCard).join("") + (note ? infoCard(note) : ""));
   updatePager(quiz.items.length);
   bindAnswers(quiz);
+  applyGrades(quiz);
 }
 
 /** 맨 아래 안내 카드의 글만 바꾼다. 이미 그려진 문제 카드는 건드리지 않는다. */
@@ -213,9 +217,11 @@ function appendNewCards(quiz, from, scroll = from > 0) {
   note.insertAdjacentHTML("beforebegin", html);
   note.remove();
 
+  currentQuiz = quiz;
   currentQuizItems = quiz.items;
   updatePager(quiz.items.length);
   bindAnswers(quiz, from);
+  applyGrades(quiz);
 
   // 예전 문제 아래에 붙었으면, 새 문제가 보이도록 그쪽으로 내려간다.
   // (한 번에 여러 문제를 만들 때 두 번째부터는 내려가지 않는다. 첫 문제를 읽는 중일 수 있으므로)
@@ -337,5 +343,114 @@ async function addOneQuizItem(session, quiz, history, scroll) {
   appendNewCards(quiz, before, scroll);
   return { ok: true, notice: result.notice };
 }
+
+// ─────────────────────────────────────────────
+// 채점: 아래쪽의 [채점하기] 를 누르면 아직 채점하지 않은 문제를 채점하고 결과를 카드에 보여준다.
+//   객관식      고른 보기가 정답 보기와 같으면 정답. (Gemini 를 부르지 않는다)
+//   빈칸 주관식  띄어쓰기·문장부호·대소문자를 빼고 정답과 글자가 같으면 바로 정답.
+//               다르면 백엔드(/grade-quiz)의 Gemini 가 뜻이 같은지 본다. ("S" 와 "황" 같은 표기 차이)
+// 채점 결과는 DB(quiz_items.is_correct)에 저장되고, 채점한 문제는 답을 고칠 수 없다.
+// 대화를 더 해서 새 문제가 붙으면 그 문제만 다시 채점할 수 있다.
+// ─────────────────────────────────────────────
+const submitBtn = document.querySelector(".quiz-footer .pill--primary");
+
+/** 비교용으로 띄어쓰기, 문장부호, 대소문자를 뺀다. */
+function normalizeAnswer(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/[\s.,·:;!?'"()[\]{}~\-]/g, "");
+}
+
+/** 빈칸 답이 정답과 글자로 똑같은지. 빈칸이 여러 개면 쉼표·빗금·줄바꿈으로 나눠 순서대로 비교한다. */
+function sameAsAnswers(answers, userAnswer) {
+  const parts = answers.length > 1 ? String(userAnswer).split(/[,/\n]/) : [userAnswer];
+  return parts.length === answers.length && answers.every((a, i) => normalizeAnswer(a) === normalizeAnswer(parts[i]));
+}
+
+/** 채점한 문제 카드에 결과를 보여주고 답을 못 고치게 막는다. */
+function applyGrades(quiz) {
+  document.querySelectorAll(".q-card[data-index]").forEach((card) => {
+    const item = quiz.items[Number(card.dataset.index)];
+    if (!item || item.isCorrect === null || item.isCorrect === undefined) return;
+
+    card.classList.toggle("q-card--correct", item.isCorrect);
+    card.classList.toggle("q-card--wrong", !item.isCorrect);
+    card.querySelectorAll("textarea, input").forEach((el) => (el.disabled = true));
+
+    if (!card.querySelector(".q-result")) {
+      const text = item.isCorrect ? "정답이에요!" : `오답이에요. 정답: ${item.answers.join(", ")}`;
+      card.insertAdjacentHTML("beforeend", `<p class="q-result">${escapeQuizHtml(text)}</p>`);
+    }
+  });
+  updateFooter(quiz);
+}
+
+/** 채점할 문제가 남았으면 [채점하기], 다 채점했으면 점수와 [기록 보기] 를 보여준다. */
+function updateFooter(quiz) {
+  if (!submitBtn) return;
+  const graded = quiz.items.filter((item) => item.isCorrect === true || item.isCorrect === false);
+  const ungraded = quiz.items.length - graded.length;
+  submitBtn.textContent = ungraded > 0 ? "채점하기" : "기록 보기";
+
+  const pagerText = document.querySelector(".pager-text");
+  if (pagerText && graded.length > 0) {
+    pagerText.textContent = `정답 ${graded.filter((item) => item.isCorrect).length} / ${graded.length}`;
+  }
+}
+
+async function gradeAll() {
+  const quiz = currentQuiz;
+  const todo = quiz.items.map((item, i) => i).filter((i) => quiz.items[i].isCorrect === null);
+  const answerOf = (i) => String(quiz.userAnswers?.[i] ?? "").trim();
+
+  // 바로 채점할 수 있는 것부터. 판단이 필요한 빈칸 답만 Gemini 에게 보낸다.
+  const results = new Map();
+  const needGemini = [];
+  for (const i of todo) {
+    const item = quiz.items[i];
+    const answer = answerOf(i);
+    if (!answer) results.set(i, false);
+    else if (isChoice(item)) results.set(i, answer === item.answers[0]);
+    else if (sameAsAnswers(item.answers, answer)) results.set(i, true);
+    else needGemini.push(i);
+  }
+
+  if (needGemini.length > 0) {
+    const res = await gradeQuiz(
+      needGemini.map((i) => ({ question: quiz.items[i].question, answers: quiz.items[i].answers, user_answer: answerOf(i) })),
+    );
+    if (!res.ok) throw new Error(res.error || "채점하지 못했어요.");
+    needGemini.forEach((i, k) => results.set(i, Boolean(res.results[k])));
+  }
+
+  for (const [i, isCorrect] of results) {
+    const item = quiz.items[i];
+    item.isCorrect = isCorrect;
+    // 채점한 답과 저장된 답이 어긋나지 않게, 기다리던 답 저장은 취소하고 채점 결과와 함께 저장한다.
+    clearTimeout(answerSaveTimers.get(item.id));
+    answerSaveTimers.delete(item.id);
+    store.saveQuizGrade(item.id, answerOf(i), isCorrect).catch((err) => console.warn("채점 결과를 저장하지 못했어요:", err));
+  }
+  applyGrades(quiz);
+}
+
+submitBtn?.addEventListener("click", async (e) => {
+  const hasUngraded = currentQuiz?.items.some((item) => item.isCorrect === null);
+  // 채점할 문제가 없으면 원래 링크(학습 기록)로 간다.
+  if (!hasUngraded) return;
+  e.preventDefault();
+  if (submitBtn.getAttribute("aria-disabled") === "true") return;
+
+  submitBtn.setAttribute("aria-disabled", "true");
+  submitBtn.textContent = "채점하는 중...";
+  try {
+    await gradeAll();
+  } catch (err) {
+    window.alert(`채점하지 못했어요. 잠시 후 다시 눌러 주세요. (${err.message})`);
+    updateFooter(currentQuiz);
+  } finally {
+    submitBtn.removeAttribute("aria-disabled");
+  }
+});
 
 document.addEventListener("DOMContentLoaded", loadQuiz);

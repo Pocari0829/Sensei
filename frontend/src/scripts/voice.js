@@ -47,14 +47,13 @@ const STOP_ICON = `
  * @param {object} chat - chat.js 가 넘겨주는 채팅 화면의 요소와 함수들
  * @param {HTMLButtonElement} chat.sendBtn - 보내기 버튼 (이 앞에 마이크를 끼워 넣는다)
  * @param {HTMLInputElement} chat.composerInput - 입력창 (듣는 동안 받아쓴 글자를 여기에 채운다)
- * @param {HTMLElement} chat.messageList - 말풍선 목록 (대화 중이면 여기에 시스템 알림을 띄운다)
+ * @param {(text: string) => void} chat.showAlert - 시스템 알림 배너를 띄우는 함수 (캐릭터 화면/목록 어느 쪽이든 같은 자리에 뜬다)
  * @param {HTMLButtonElement | null} chat.headerMicBtn - 대화 시작 전 헤더의 "음성으로 설명하기" 버튼
- * @param {(text: string) => string} chat.systemAlert - 시스템 알림 HTML 을 만드는 함수
  * @param {() => boolean} chat.isSending - 하쿠의 대답을 기다리는 중인지
  * @param {(text: string) => void} chat.sendMessage - 글로 보낼 때와 같은 전송 함수
  */
 export function setupVoiceInput(chat) {
-  const { sendBtn, composerInput, messageList, headerMicBtn, systemAlert, isSending, sendMessage } = chat;
+  const { sendBtn, composerInput, showAlert, headerMicBtn, isSending, sendMessage } = chat;
 
   const micButtons = [];
   const micIcons = new Map(); // 버튼마다 원래 아이콘 (듣기가 끝나면 되돌린다)
@@ -77,16 +76,12 @@ export function setupVoiceInput(chat) {
   }
 
   /**
-   * 말로 보내기에서 생긴 문제를 알린다. 대화 중이면 "시스템 알림" 박스로, 대화 시작 전이면 입력창 안내 글로.
-   * 입력창에는 긴 글이 다 안 들어가므로, 그때는 짧은 글을 쓴다.
+   * 말로 보내기에서 생긴 문제를 알린다. 시스템 알림 배너(showAlert)로 띄우면서,
+   * 입력창에는 긴 글이 다 안 들어가므로 짧은 글을 안내 문구로도 잠깐 보여준다.
    */
   function voiceNotice([text, short]) {
-    if (!messageList.hidden) {
-      messageList.insertAdjacentHTML("beforeend", systemAlert(text));
-      messageList.scrollTop = messageList.scrollHeight;
-    } else {
-      setHint(short || text, 5000);
-    }
+    showAlert(text);
+    setHint(short || text, 5000);
   }
 
   /** 듣는 중 / 마무리 중 / 기다리는 중에 맞춰 마이크 버튼들의 모양을 바꾼다. */

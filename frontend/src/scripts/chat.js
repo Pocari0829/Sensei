@@ -13,6 +13,7 @@ import { NICKNAME_MAX, getNickname, lowerLevel, saveNickname } from "./user.js";
 
 const phoneEl = document.querySelector(".phone");
 const dragHint = document.getElementById("drag-hint");
+const dragHintText = document.getElementById("drag-hint-text");
 const idleHeader = document.getElementById("idle-header");
 const topicHeader = document.getElementById("topic-header");
 const topicNameEl = document.getElementById("topic-name");
@@ -22,8 +23,10 @@ const topicActions = document.getElementById("topic-actions");
 const topicInput = document.getElementById("topic-input");
 const editTopicBtn = document.getElementById("edit-topic-btn");
 const topicSaveBtn = document.getElementById("topic-save-btn");
-const emptyState = document.getElementById("empty-state");
+const stage = document.getElementById("stage");
+const stageBubble = document.getElementById("stage-bubble");
 const messageList = document.getElementById("message-list");
+const alertBanner = document.getElementById("alert-banner");
 const quickActions = document.getElementById("quick-actions");
 const composerForm = document.getElementById("composer");
 const composerInput = document.getElementById("composer-input");
@@ -32,10 +35,13 @@ const newTopicBtn = document.getElementById("new-topic-btn");
 const easierBtn = document.getElementById("easier-btn");
 const dontKnowBtn = document.getElementById("dontknow-btn");
 const quizBtn = document.getElementById("quiz-btn");
-const greetingName = document.getElementById("greeting-name");
 
 let activeSession = null;
 let isSending = false;
+
+// 캐릭터 화면("character", 기본값) ↔ 전체 대화 목록("list"). 대화 중에만 "list"로 바뀔 수 있고,
+// 손잡이(#drag-hint)를 드래그/탭하면 바뀐다. 메시지를 보내면 항상 "character"로 돌아온다.
+let view = "character";
 
 // 하쿠가 부르는 이름. DB(users.nickname)에서 불러오고, 하쿠에게 질문할 때 같이 보낸다.
 let nickname = null;
@@ -65,16 +71,6 @@ function bubbleRowSensei(text) {
     </div>`;
 }
 
-function typingRow() {
-  return `
-    <div class="bubble-row" id="typing-row">
-      <img class="avatar" src="../../public/mascot.png" alt="" />
-      <div class="bubble bubble--sensei typing-dots" aria-label="하쿠가 생각하는 중">
-        <span></span><span></span><span></span>
-      </div>
-    </div>`;
-}
-
 function systemAlert(text) {
   return `
     <div class="system">
@@ -95,12 +91,18 @@ function checkAlert() {
     </div>`;
 }
 
-/** 말풍선 목록 맨 아래에 "시스템 알림" 을 붙인다. 아직 대화가 없는 빈 화면이어도 보이게 한다. */
+/**
+ * 저장 실패 등 시스템 알림을 띄운다. 캐릭터 화면/대화 목록 어느 쪽을 보고 있어도(심지어 세션이
+ * 아직 없어도) 입력창 바로 위 고정된 자리(#alert-banner)에 뜬다 — 화면을 강제로 바꾸지 않는다.
+ */
 function showAlert(text) {
-  emptyState.hidden = true;
-  messageList.hidden = false;
-  messageList.insertAdjacentHTML("beforeend", systemAlert(text));
-  messageList.scrollTop = messageList.scrollHeight;
+  alertBanner.hidden = false;
+  alertBanner.innerHTML = systemAlert(text);
+}
+
+function hideAlert() {
+  alertBanner.hidden = true;
+  alertBanner.innerHTML = "";
 }
 
 /** 지금 보는 세션을 주소(?session=)에 남긴다. 새로고침하거나 퀴즈에서 돌아와도 같은 세션이 열린다. */
@@ -108,39 +110,183 @@ function showSessionInUrl(id) {
   window.history.replaceState(null, "", `?session=${encodeURIComponent(id)}`);
 }
 
-/** 현재 세션 상태(activeSession)에 맞춰 화면 전체를 다시 그린다. */
+/**
+ * 캐릭터 화면(#stage-bubble)에 보여줄 말풍선 하나를 정한다.
+ * 목록(#message-list)과 달리 캐릭터 화면은 항상 "지금 하쿠가 하고 있는 말" 한 줄만 보여준다.
+ *   - 대화 전: 고정 인사말
+ *   - 마지막이 하쿠 말: 그 말
+ *   - 마지막이 "틀렸어요"(check): 틀렸다는 표시
+ *   - 마지막이 사용자 말(하쿠 답을 기다리는 중): 그 직전 하쿠 말을 그대로 유지해서 보여준다
+ *     (답이 오면 render()가 다시 불려서 새 말로 바뀐다)
+ */
+function renderStageBubble(shown, inSession) {
+  stageBubble.classList.remove("is-typing");
+  stageBubble.removeAttribute("aria-label");
+
+  if (shown.length === 0) {
+    stageBubble.className = "bubble bubble--sensei bubble--greeting";
+    stageBubble.textContent = "";
+    stageBubble.append("안녕");
+    if (nickname) stageBubble.append(` ${nickname}`);
+    stageBubble.append("! 오늘은 뭘 ");
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    mark.textContent = "가르쳐";
+    stageBubble.append(mark, " 줄 거야?");
+    return;
+  }
+
+  const last = shown[shown.length - 1];
+  const source =
+    last.role === "user" ? [...shown].reverse().find((m) => m.role !== "user") : last;
+
+  if (!source) {
+    // 아직 하쿠가 한 마디도 안 한 상태(첫 메시지를 막 보낸 직후) — 기다리는 느낌만 준다.
+    stageBubble.className = "bubble bubble--tint";
+    stageBubble.textContent = "음...";
+    return;
+  }
+
+  if (source.role === "check") {
+    stageBubble.className = "bubble bubble--wrong";
+    stageBubble.textContent = WRONG_TEXT;
+    return;
+  }
+
+  stageBubble.className = inSession ? "bubble bubble--tint" : "bubble bubble--sensei";
+  stageBubble.textContent = source.text;
+}
+
+/** 현재 세션 상태(activeSession)와 화면 모드(view)에 맞춰 화면 전체를 다시 그린다. */
 function render() {
   const sessionMessages = activeSession?.messages ?? [];
   const inSession = sessionMessages.length > 0;
   // 화면에는 첫 인사 말풍선(있으면) 뒤에 세션 대화를 이어서 보여준다.
   const shown = [...introMessages, ...sessionMessages];
-  const hasMessages = shown.length > 0;
 
-  // 대화가 시작되면 conversation.html 이 쓰던 톤(연보라 배경)으로,
-  // 아직 시작 전이면 chat.html 이 쓰던 흰 배경으로 — 기존 두 디자인을 상태로 재현한다.
-  phoneEl.classList.toggle("phone--tinted", hasMessages);
+  // 대화가 없으면(세션 자체가 없으면) 목록을 볼 수 없다 — 항상 캐릭터 화면으로.
+  if (!inSession) view = "character";
+
+  const showList = inSession && view === "list";
+
+  // 전체 대화 목록을 보고 있을 때만 conversation.html 이 쓰던 톤(연보라 배경)으로,
+  // 캐릭터와 대화하는 중(기본 화면)에는 흰 배경을 유지한다.
+  phoneEl.classList.toggle("phone--tinted", showList);
 
   dragHint.hidden = !inSession;
+  if (dragHintText) {
+    dragHintText.textContent =
+      view === "list" ? "아래로 내려서 하쿠에게 돌아가기" : "위로 올려서 전체 대화 보기";
+  }
+  // 손잡이 자리: 하쿠 화면에서는 하쿠 바로 아래(#stage 맨 끝, 아래에서 위로 끌어올리는 느낌),
+  // 목록에서는 목록 맨 위(끌어올린 목록의 윗변을 잡고 내리는 느낌).
+  dragHint.classList.toggle("drag-hint--list", showList);
+  // (이미 그 자리면 옮기지 않는다 — 옮기면 화살표 애니메이션이 메시지마다 다시 돈다)
+  if (showList && dragHint.nextElementSibling !== messageList) messageList.before(dragHint);
+  if (!showList && stage.lastElementChild !== dragHint) stage.append(dragHint);
+  // 대화 중 하쿠 화면은 화면 전체가 "위로 쓸어 올리기" 영역이다 (아래 stage 의 pointer 이벤트).
+  stage.classList.toggle("stage--swipeable", inSession);
+
   idleHeader.hidden = inSession;
   topicHeader.hidden = !inSession;
-  emptyState.hidden = hasMessages;
-  messageList.hidden = !hasMessages;
+  if (inSession) topicNameEl.textContent = activeSession.topic || "학습 중";
+
+  stage.hidden = showList;
+  messageList.hidden = !showList;
   quickActions.hidden = !inSession;
 
-  if (!hasMessages) return;
+  renderStageBubble(shown, inSession);
 
-  if (inSession) topicNameEl.textContent = activeSession.topic || "학습 중";
-  messageList.innerHTML =
-    `<p class="day-divider">오늘</p>` +
-    shown
-      .map((m) => {
-        if (m.role === "user") return bubbleRowUser(m.text);
-        if (m.role === "check") return checkAlert();
-        return bubbleRowSensei(m.text);
-      })
-      .join("");
-  messageList.scrollTop = messageList.scrollHeight;
+  if (showList) {
+    messageList.innerHTML =
+      `<p class="day-divider">오늘</p>` +
+      shown
+        .map((m) => {
+          if (m.role === "user") return bubbleRowUser(m.text);
+          if (m.role === "check") return checkAlert();
+          return bubbleRowSensei(m.text);
+        })
+        .join("");
+    messageList.scrollTop = messageList.scrollHeight;
+  }
 }
+
+/** view를 바꾸고 다시 그린다. 대화가 없으면(세션이 없으면) "list"로 못 간다 (render()가 되돌린다). */
+function setView(next) {
+  if (view === next) return;
+  view = next;
+  render();
+}
+
+// ─────────────────────────────────────────────
+// 손잡이(#drag-hint) 드래그/탭으로 캐릭터 화면 ↔ 전체 대화 목록을 전환한다.
+// 위로 드래그 = 목록 보기, 아래로 드래그 = 캐릭터 화면으로 돌아가기.
+// 많이 움직이지 않고 눌렀다 뗀 정도(탭)는 지금 화면의 반대쪽으로 그냥 토글한다
+// (마우스로 드래그하기 번거로운 데스크톱에서도 쓸 수 있게).
+// ─────────────────────────────────────────────
+const DRAG_THRESHOLD = 32; // 이만큼(px) 움직여야 "드래그"로 친다
+const TAP_THRESHOLD = 8; // 이보다 적게 움직이면 "탭"으로 친다
+
+let dragStartY = null;
+
+dragHint.addEventListener("pointerdown", (e) => {
+  dragStartY = e.clientY;
+  // 손잡이는 세로 50px 정도라서, 조금만 길게 드래그해도 손가락/마우스가
+  // 손잡이 영역 밖으로 빠져나간다. pointer capture를 걸어두면 이후
+  // pointermove/pointerup이 실제 위치와 무관하게 이 요소로 계속 전달된다.
+  dragHint.setPointerCapture?.(e.pointerId);
+});
+
+dragHint.addEventListener("pointerup", (e) => {
+  if (dragStartY === null) return;
+  const delta = e.clientY - dragStartY;
+  dragStartY = null;
+  dragHint.releasePointerCapture?.(e.pointerId);
+
+  if (Math.abs(delta) < TAP_THRESHOLD) {
+    setView(view === "list" ? "character" : "list");
+  } else if (delta < -DRAG_THRESHOLD) {
+    setView("list");
+  } else if (delta > DRAG_THRESHOLD) {
+    setView("character");
+  }
+});
+
+dragHint.addEventListener("pointercancel", () => {
+  dragStartY = null;
+});
+
+// 키보드로도 쓸 수 있게: 손잡이에 포커스를 두고 Enter/Space = 탭과 같다.
+dragHint.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  setView(view === "list" ? "character" : "list");
+});
+
+// 손잡이를 정확히 잡지 않아도 되게, 대화 중에는 하쿠 화면(#stage) 아무 데서나 위로 쓸어 올리면 목록이 열린다.
+// 여기서는 탭은 무시한다 (말풍선이나 하쿠를 그냥 눌렀다고 화면이 바뀌면 안 되니까).
+let stageSwipeStartY = null;
+
+stage.addEventListener("pointerdown", (e) => {
+  if (!stage.classList.contains("stage--swipeable")) return;
+  // 손잡이는 #stage 안에 있지만 자기 이벤트(탭 토글 포함)를 따로 처리한다.
+  // 여기서 pointer capture 를 또 걸면 손잡이의 pointerup 이 #stage 로 가버려서 탭이 안 먹는다.
+  if (dragHint.contains(e.target)) return;
+  stageSwipeStartY = e.clientY;
+  stage.setPointerCapture?.(e.pointerId);
+});
+
+stage.addEventListener("pointerup", (e) => {
+  if (stageSwipeStartY === null) return;
+  const delta = e.clientY - stageSwipeStartY;
+  stageSwipeStartY = null;
+  stage.releasePointerCapture?.(e.pointerId);
+  if (delta < -DRAG_THRESHOLD) setView("list");
+});
+
+stage.addEventListener("pointercancel", () => {
+  stageSwipeStartY = null;
+});
 
 function setSending(sending) {
   isSending = sending;
@@ -161,9 +307,8 @@ const TYPING_SPEED = 28;
 
 let typingTimer = null;
 
-function typeLastSenseiBubble() {
-  const bubbles = messageList.querySelectorAll(".bubble--sensei");
-  const el = bubbles[bubbles.length - 1];
+/** 글자를 하나씩 el 에 채워 넣는다. el.textContent 에 이미 들어있는 완성된 문장을 대상으로 한다. */
+function typeElementText(el, onTick) {
   if (!el) return;
 
   // 한글은 한 글자가 한 칸이지만 이모지는 두 칸을 차지한다.
@@ -178,12 +323,9 @@ function typeLastSenseiBubble() {
 
   let i = 0;
   typingTimer = setInterval(() => {
-    // 글자가 늘어나 말풍선이 길어지므로 따라 내려간다.
-    // 단, 맨 아래를 보고 있을 때만. 위로 올려 이전 대화를 보는 중이면 끌어내리지 않는다.
-    const nearBottom = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 40;
     el.textContent += chars[i];
     i += 1;
-    if (nearBottom) messageList.scrollTop = messageList.scrollHeight;
+    onTick?.();
 
     if (i >= chars.length) {
       clearInterval(typingTimer);
@@ -192,9 +334,38 @@ function typeLastSenseiBubble() {
   }, TYPING_SPEED);
 }
 
+/** 전체 대화 목록에서 마지막 하쿠 말풍선을 타이핑 효과로 보여준다. (view === "list" 일 때) */
+function typeLastSenseiBubbleInList() {
+  const bubbles = messageList.querySelectorAll(".bubble--sensei");
+  typeElementText(bubbles[bubbles.length - 1], () => {
+    // 글자가 늘어나 말풍선이 길어지므로 따라 내려간다.
+    // 단, 맨 아래를 보고 있을 때만. 위로 올려 이전 대화를 보는 중이면 끌어내리지 않는다.
+    const nearBottom = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 40;
+    if (nearBottom) messageList.scrollTop = messageList.scrollHeight;
+  });
+}
+
+/** 캐릭터 화면(#stage-bubble)의 말을 타이핑 효과로 보여준다. (기본 화면, view === "character" 일 때) */
+function typeStageBubble() {
+  typeElementText(stageBubble);
+}
+
+/** 하쿠의 대답을 기다리는 동안 캐릭터 화면에 "..." 점 세 개를 보여준다. */
+function showStageTyping() {
+  stageBubble.classList.remove("is-typing");
+  stageBubble.className = "bubble bubble--tint typing-dots";
+  stageBubble.setAttribute("aria-label", "하쿠가 생각하는 중");
+  stageBubble.innerHTML = "<span></span><span></span><span></span>";
+}
+
 async function sendMessage(rawText) {
   const text = rawText.trim();
   if (!text || isSending) return;
+
+  // 메시지를 보내면 항상 캐릭터 화면으로 돌아온다 — 대화 목록을 보고 있었더라도,
+  // 지금 막 주고받는 말은 캐릭터와 실시간으로 대화하는 느낌으로 보여주기 위해서다.
+  view = "character";
+  hideAlert();
 
   // 첫 인사 중이면, 이번에 보낸 말은 설명이 아니라 닉네임이다.
   if (askingNickname) {
@@ -243,13 +414,13 @@ async function sendMessage(rawText) {
     return;
   }
   render();
-
-  messageList.insertAdjacentHTML("beforeend", typingRow());
-  messageList.scrollTop = messageList.scrollHeight;
+  showStageTyping();
 
   const result = await askHaku(text, historyBeforeThisTurn, nickname);
 
-  document.getElementById("typing-row")?.remove();
+  // 응답을 받자마자 일단 캐릭터 화면을 "..." 가 아닌 평소 모습으로 되돌려 둔다.
+  // (성공하면 바로 아래에서 새 말로 다시 그린다. 실패해도 "..." 가 그대로 남지 않는다)
+  render();
 
   if (result.ok) {
     // 정오 판별에서 틀렸으면 하쿠는 대답하지 않는다(꼬리질문 없음).
@@ -265,7 +436,10 @@ async function sendMessage(rawText) {
 
     if (session === activeSession) {
       render();
-      if (!isWrong) typeLastSenseiBubble();
+      if (!isWrong) {
+        if (view === "list") typeLastSenseiBubbleInList();
+        else typeStageBubble();
+      }
       if (saveError) {
         showAlert(`방금 대답을 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${saveError.message})`);
       }
@@ -394,7 +568,8 @@ const defaultPlaceholder = composerInput.placeholder;
 function addIntro(role, text) {
   introMessages.push({ role, text });
   render();
-  if (role === "sensei") typeLastSenseiBubble();
+  // 첫 인사는 세션이 없는 상태(activeSession === null)에서 진행되므로 항상 캐릭터 화면에 뜬다.
+  if (role === "sensei") typeStageBubble();
 }
 
 /** "지수라고" / "민준이라고": 이름 끝 글자에 받침이 있으면 "이라고" 를 붙인다. */
@@ -402,11 +577,6 @@ function callName(name) {
   const code = name.charCodeAt(name.length - 1) - 0xac00;
   const isHangul = code >= 0 && code <= 0xd7a3 - 0xac00;
   return isHangul && code % 28 === 0 ? `${name}라고` : `${name}이라고`;
-}
-
-/** 빈 화면 인사말("안녕! 오늘은 뭘 가르쳐 줄 거야?")에도 닉네임을 넣는다. */
-function showGreetingName() {
-  greetingName.textContent = nickname ? ` ${nickname}` : "";
 }
 
 function startNicknameIntro() {
@@ -437,7 +607,6 @@ async function submitNickname(name) {
   nickname = name;
   askingNickname = false;
   composerInput.placeholder = defaultPlaceholder;
-  showGreetingName();
   addIntro("sensei", `알겠어! 앞으로 ${callName(name)} 부를게 🦜 오늘은 어떤 걸 가르쳐 줄 거야?`);
   setSending(false);
 }
@@ -451,11 +620,7 @@ async function loadNickname() {
     return;
   }
 
-  if (nickname) {
-    showGreetingName();
-  } else {
-    startNicknameIntro();
-  }
+  if (!nickname) startNicknameIntro();
 }
 
 /**
@@ -506,9 +671,8 @@ import { setupVoiceInput } from "./voice.js";
 setupVoiceInput({
   sendBtn,
   composerInput,
-  messageList,
+  showAlert,
   headerMicBtn: idleHeader.querySelector('button[aria-label="음성으로 설명하기"]'),
-  systemAlert,
   isSending: () => isSending,
   sendMessage,
 });

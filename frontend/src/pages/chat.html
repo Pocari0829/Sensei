@@ -12,20 +12,6 @@
   </head>
   <body data-page="chat">
     <div class="phone">
-      <div class="statusbar">
-        <span>9:41</span>
-        <div class="statusbar__icons">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="battery"></span>
-        </div>
-      </div>
-
-      <!-- 대화가 시작되면 이전 대화를 드래그해서 보라는 힌트가 나타난다 -->
-      <div class="drag-hint" id="drag-hint" hidden>
-        <span class="drag-hint__bar"></span>
-        <p>드래그해서 이전 대화 보기</p>
-      </div>
-
       <!-- 주제가 아직 없을 때: 기본 로고 헤더 -->
       <div class="header" id="idle-header">
         <span class="logo">SENSEI</span>
@@ -81,23 +67,42 @@
         </div>
       </div>
 
-      <!-- 메시지가 하나도 없을 때: 인사말 + 마스코트 -->
-      <div class="body body--center" id="empty-state">
-        <div class="bubble bubble--sensei bubble--greeting">
-          안녕<span id="greeting-name"></span>! 오늘은 뭘 <span class="mark">가르쳐</span> 줄 거야?
+      <!--
+        캐릭터 화면(기본 화면). 대화 전에는 인사말, 대화 중에는 하쿠의 최신 말풍선 하나만
+        여기 띄워서 "캐릭터와 계속 대화하는" 느낌을 유지한다. 내용은 chat.js의 renderStageBubble()이 채운다.
+        대화 중에는 이 화면 아무 데서나 위로 쓸어 올려도 전체 대화 목록(#message-list)이 열린다.
+      -->
+      <div class="body body--center" id="stage">
+        <div class="bubble bubble--sensei bubble--greeting" id="stage-bubble">
+          안녕! 오늘은 뭘 <span class="mark">가르쳐</span> 줄 거야?
         </div>
         <div class="mascot-slot blob-stage">
           <span class="cloud cloud--1"></span>
           <span class="cloud cloud--2"></span>
           <div>
+            <!-- 발밑 그림자는 그림 안에 이미 있어서 .mascot-ground 는 따로 두지 않는다 -->
             <img src="../../public/mascot.png" alt="하쿠 마스코트" />
-            <div class="mascot-ground"></div>
           </div>
         </div>
       </div>
 
-      <!-- 대화가 시작되면 여기에 말풍선들이 JS로 채워진다 -->
+      <!--
+        대화가 시작되면 보이는 손잡이. 드래그(또는 탭)해서 하쿠 화면 ↔ 전체 대화 목록을 오간다.
+        하쿠 화면에서는 #stage 안 하쿠 바로 아래, 목록에서는 목록 맨 위에 붙는다 (chat.js 의 render()가 옮긴다).
+      -->
+      <div class="drag-hint" id="drag-hint" role="button" tabindex="0" hidden>
+        <svg class="drag-hint__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m6 15 6-6 6 6" />
+        </svg>
+        <span class="drag-hint__bar"></span>
+        <p id="drag-hint-text">위로 올려서 전체 대화 보기</p>
+      </div>
+
+      <!-- 손잡이를 드래그(또는 탭)해야 보이는 전체 대화 목록 -->
       <div class="scroll" id="message-list" style="padding: 0 16px 12px" hidden></div>
+
+      <!-- 저장 실패 등 시스템 알림. 캐릭터 화면/목록 어느 쪽을 보고 있어도 항상 이 자리에 뜬다 -->
+      <div id="alert-banner" class="alert-banner" hidden></div>
 
       <div class="quick-actions" id="quick-actions" hidden>
         <button type="button" class="pill" id="easier-btn">더 쉽게</button>

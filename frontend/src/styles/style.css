@@ -13,7 +13,6 @@
   --border: #e6e3f2;
   --kakao: #fee500;
   --kakao-fg: #3c2f16;
-  --signal: #34c759;
   --shadow-soft: 0 1px 2px rgba(38, 34, 74, 0.04), 0 6px 16px -8px rgba(60, 45, 130, 0.16);
   --shadow-bubble: 0 8px 20px -8px rgba(79, 70, 200, 0.45);
   --shadow-phone: 0 24px 60px -24px rgba(60, 45, 130, 0.35);
@@ -50,6 +49,8 @@ body {
   max-width: 390px;
   min-height: 100vh;
   overflow: hidden;
+  /* 예전 가짜 상태바(9:41·배터리, 약 28px)가 있던 자리. 헤더가 셸 맨 위(데스크톱은 둥근 모서리)에 붙지 않게 조금만 띄운다 */
+  padding-top: 8px;
   background: var(--card);
   box-shadow: var(--shadow-phone);
 }
@@ -92,35 +93,6 @@ body[data-page="chat"] #message-list {
   contain: size;
   scrollbar-width: thin;
   scrollbar-color: rgba(79, 70, 200, 0.25) transparent;
-}
-
-/* 상태바 */
-.statusbar {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px 2px;
-  font-size: 11px;
-  font-weight: 700;
-}
-.statusbar__icons {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-.dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--foreground);
-}
-.battery {
-  width: 15px;
-  height: 9px;
-  margin-left: 4px;
-  border-radius: 3px;
-  background: var(--signal);
 }
 
 /* 헤더 */
@@ -244,6 +216,21 @@ body[data-page="chat"] #message-list {
   font-size: 16px;
   font-weight: 700;
   line-height: 1.4;
+}
+/* 캐릭터 화면(#stage-bubble)에서 정오 판별이 틀렸을 때 보여주는 말풍선. .system--wrong 과 같은 빨간 톤 */
+.bubble--wrong {
+  border-bottom-left-radius: 6px;
+  background: #fdecec;
+  color: #c8363b;
+  box-shadow: none;
+}
+/* 저장 실패 등 시스템 알림 배너. 캐릭터 화면/대화 목록 어느 쪽을 보고 있어도 같은 자리(입력창 바로 위)에 뜬다 */
+.alert-banner {
+  flex-shrink: 0;
+  padding: 0 16px 6px;
+}
+.alert-banner .system {
+  margin-bottom: 0;
 }
 .system {
   margin-bottom: 10px;
@@ -412,8 +399,9 @@ body[data-page="chat"] #message-list {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  height: 52px;
+  gap: 8px;
+  /* Google 공식 버튼(size: "large")의 고정 높이 40px 에 맞춘다. Google 버튼은 키울 수 없어서 카카오 쪽을 줄였다 */
+  height: 40px;
   font-size: 14px;
   font-weight: 700;
   border: 1px solid var(--border);
@@ -432,8 +420,8 @@ body[data-page="chat"] #message-list {
   color: var(--kakao-fg);
 }
 .oauth svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 /* Google 공식 로그인 버튼 자리 (login.js 가 그림).
    버튼 안쪽은 Google 이 그려서 CSS 로 못 바꾸므로, 바깥에 원래 버튼과 같은 그림자만 둘러 준다.
@@ -564,23 +552,97 @@ button.oauth {
   z-index: -1;
 }
 
-/* 대화 화면 */
+/* 대화 화면 — 손잡이를 드래그하거나 탭하면 캐릭터 화면 ↔ 전체 대화 목록이 바뀐다 (chat.js).
+   하쿠 화면에서는 하쿠 바로 아래(빠른 버튼 위)에, 목록에서는 목록 맨 위에 붙는다.
+   위쪽 화살표 + 손잡이 막대 + 보라 글씨로 "끌어올리는 곳"임을 바로 알 수 있게 하고,
+   화면 가로 전체 × 세로 약 50px 를 잡을 수 있는 영역으로 둔다. */
 .drag-hint {
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 4px 0 2px;
+  gap: 3px;
+  padding: 6px 0 10px;
+  color: var(--primary);
+  cursor: grab;
+  /* 세로 드래그 제스처를 브라우저가 화면 스크롤/당겨서 새로고침으로 가로채지 않게 한다 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.drag-hint:active {
+  cursor: grabbing;
+}
+.drag-hint:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: 14px;
+}
+.drag-hint__arrow {
+  width: 18px;
+  height: 18px;
+  /* 손잡이가 나타날 때 화살표가 위로 세 번 톡톡 튀어서 "위로 올리라"는 걸 알려준다 */
+  animation: drag-hint-nudge 1.2s ease-in-out 0.4s 3;
 }
 .drag-hint__bar {
-  width: 36px;
-  height: 4px;
+  width: 44px;
+  height: 5px;
   border-radius: 999px;
-  background: var(--border);
+  background: rgba(79, 70, 200, 0.22);
+  transition: background-color 0.15s ease;
+}
+.drag-hint:active .drag-hint__bar {
+  background: var(--primary);
 }
 .drag-hint p {
-  font-size: 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+/* 목록 화면: 목록 맨 위에서 아래로 내리는 손잡이. 화살표를 뒤집고 글씨는 차분하게 */
+.drag-hint--list {
+  padding: 4px 0 8px;
+}
+.drag-hint--list .drag-hint__arrow {
+  scale: 1 -1;
+}
+.drag-hint--list p {
   color: var(--muted-fg);
+}
+@keyframes drag-hint-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  40% {
+    translate: 0 -5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drag-hint__arrow {
+    animation: none;
+  }
+}
+/* 하쿠 화면 안에서는 말풍선·하쿠와 한 덩어리로 가운데 모이고, 잡는 영역은 가로 전체로 둔다 */
+/* mascot.png 아래쪽 13% 는 투명 여백이라, 그만큼 끌어올려 하쿠 발밑 바로 아래에 붙인다 */
+#stage .drag-hint {
+  align-self: stretch;
+  margin-top: -28px;
+}
+/* 채팅 화면의 하쿠: 화면이 낮으면(작은 휴대폰) 화면 높이에 맞춰 줄여서
+   긴 말풍선이 헤더에 붙거나 손잡이·빠른 버튼이 밀려나지 않게 한다 */
+#stage {
+  padding-top: 12px;
+}
+#stage .mascot-slot img {
+  max-height: 36vh;
+  max-height: 36dvh;
+}
+/* 대화 중 하쿠 화면은 아무 데서나 위로 쓸어 올려도 목록이 열린다 (chat.js).
+   그 세로 쓸기를 브라우저 스크롤이 가로채지 않게 하고, 끄는 동안 글자가 선택되지 않게 한다 */
+.stage--swipeable {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .topic-header {
   display: flex;
@@ -1052,8 +1114,10 @@ button.oauth {
   color: var(--muted-fg);
 }
 
-/* 타이핑 효과 — 하쿠가 한 글자씩 말하는 동안 끝에 커서가 깜빡인다 */
-.bubble--sensei.is-typing::after {
+/* 타이핑 효과 — 하쿠가 한 글자씩 말하는 동안 끝에 커서가 깜빡인다.
+   캐릭터 화면(#stage-bubble)은 대화 중일 때 bubble--tint 를 쓰므로 같이 걸어준다. */
+.bubble--sensei.is-typing::after,
+.bubble--tint.is-typing::after {
   content: "";
   display: inline-block;
   width: 2px;

@@ -15,7 +15,7 @@ pip install -r backend/requirements.txt
 **터미널 1 — 백엔드**
 
 ```powershell
-.\venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1![alt text](image.png)
 python -m backend.app
 ```
 

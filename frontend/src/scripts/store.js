@@ -231,6 +231,31 @@ export async function getQuiz(sessionId) {
   };
 }
 
+/**
+ * 시험지 목록 화면(quiz-list.html)에 쓸 세션별 요약. 문제가 하나라도 있는 세션만 준다.
+ * 돌려주는 것: Map<세션 id, {total, graded, correct, lastMadeAt}>  (lastMadeAt = 마지막으로 문제를 만든 시각, ms)
+ */
+export async function getQuizSummaries(sessionIds) {
+  const summaries = new Map();
+  if (sessionIds.length === 0) return summaries;
+
+  const { data, error } = await supabase
+    .from("quiz_items")
+    .select("session_id, is_correct, created_at")
+    .in("session_id", sessionIds);
+  if (error) throw error;
+
+  for (const row of data) {
+    const s = summaries.get(row.session_id) ?? { total: 0, graded: 0, correct: 0, lastMadeAt: 0 };
+    s.total += 1;
+    if (row.is_correct !== null && row.is_correct !== undefined) s.graded += 1;
+    if (row.is_correct === true) s.correct += 1;
+    s.lastMadeAt = Math.max(s.lastMadeAt, Date.parse(row.created_at));
+    summaries.set(row.session_id, s);
+  }
+  return summaries;
+}
+
 /** 새로 만든 문제들을 저장하고, 저장된 문제(id 포함)를 돌려준다. messageCount = 문제를 만들 때의 대화 메시지 수. */
 export async function addQuizItems(sessionId, items, messageCount) {
   const rows = items.map((item) => ({

@@ -115,6 +115,26 @@ body[data-page="chat"] #message-list {
   scrollbar-color: rgba(0, 117, 229, 0.25) transparent;
 }
 
+/* 학습 기록 / 빈틈 시험지: 채팅 화면처럼 셸을 화면 높이에 맞추고, 카드 목록(.scroll)만 스크롤한다.
+   그래야 스크롤바가 브라우저 창 끝이 아니라 목록 바로 옆(폰 화면 안)에 보여서, 끌어서 옛날 항목까지 빨리 내려갈 수 있다.
+   스크롤바는 기본 회색 대신 화면 톤에 맞춘 얇은 파란색. 항목이 적어서 넘치지 않으면 보이지 않는다. */
+body[data-page="history"],
+body[data-page="quiz-list"] {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+body[data-page="history"] .phone,
+body[data-page="quiz-list"] .phone {
+  min-height: 0;
+}
+body[data-page="history"] .scroll,
+body[data-page="quiz-list"] .scroll {
+  contain: size;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 117, 229, 0.45) transparent;
+  scrollbar-gutter: stable;
+}
+
 /* 상태바 */
 .statusbar {
   display: flex;
@@ -785,8 +805,10 @@ body[data-page="chat"] #message-list {
   border-radius: 10px;
   background: var(--card);
   box-shadow: var(--shadow-soft);
-  font-weight: 600;
-  font-size: 14px;
+  /* 캐릭터 화면 말풍선 글꼴: 본문 글꼴(Pretendard) 굵게(700). 인사말과 하쿠의 대답 모두 이 칸을 쓴다 */
+  font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 16px;
 }
 .chat-mascot {
   position: relative;
@@ -888,7 +910,7 @@ body[data-page="chat"] #message-list {
 }
 /* 캐릭터 화면의 말풍선 하나(#stage-bubble). 인사말 칸(.chat-greeting)을 그대로 쓰되,
    대화 중에는 하쿠의 긴 말도 들어가야 하므로 높이를 글 길이에 맞춘다.
-   인사말이든 하쿠의 대답이든 글꼴 굵기는 .chat-greeting 의 600 그대로 같게 보인다. */
+   인사말이든 하쿠의 대답이든 글꼴(Pretendard 700)은 .chat-greeting 그대로 같게 보인다. */
 #stage-bubble.chat-greeting--talk {
   width: auto;
   max-width: 320px;
@@ -977,16 +999,25 @@ body[data-page="chat"] #message-list {
   width: 12px;
   height: 12px;
 }
+/* 문제 카드: 강조선·그림자 없이 얇은 회색 테두리 하나로 담백하게 */
 .q-card {
   margin-top: 12px;
   padding: 14px 16px;
-  border-radius: 18px;
-  border-left: 3px solid var(--primary);
+  border: 1px solid #e3e5ea;
+  border-radius: 14px;
+  background: #fbfbfd;
+  box-shadow: none;
 }
 .q-card__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.q-card__type {
+  margin-left: 2px;
   font-size: 11px;
-  font-weight: 700;
-  color: var(--primary);
+  font-weight: 500;
+  color: var(--muted-fg);
 }
 .q-card__text {
   margin-top: 6px;
@@ -1015,8 +1046,8 @@ body[data-page="chat"] #message-list {
   font: inherit;
   font-size: 12px;
   resize: none;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid #e3e5ea;
+  border-radius: 12px;
   background: var(--card);
   outline: none;
 }
@@ -1078,10 +1109,10 @@ body[data-page="chat"] #message-list {
 }
 /* 채점 결과 (quiz.js 의 applyGrades) */
 .q-card--correct {
-  border-left-color: #2da44e;
+  border-color: #2da44e;
 }
 .q-card--wrong {
-  border-left-color: #e5484d;
+  border-color: #e5484d;
 }
 .q-result {
   margin-top: 8px;
@@ -1131,6 +1162,34 @@ body[data-page="chat"] #message-list {
   border-radius: 24px;
   text-decoration: none;
   color: inherit;
+}
+/* 빈틈 시험지 목록의 정렬 기준 (작은 알약 버튼 3개, 고른 것만 파랗게) */
+.sort-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 0 20px 12px;
+}
+.sort-tab {
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted-fg);
+  cursor: pointer;
+}
+.sort-tab[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+.sort-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .session__link {
   display: flex;

@@ -94,9 +94,9 @@ function quizCard(item, index) {
 
     return `
     <div class="card q-card" data-index="${index}">
-      <p class="q-card__label">Q ${n} · 객관식</p>
+      <p class="q-card__label">문제 ${n}. <span class="q-card__type">객관식</span></p>
       <p class="q-card__text">${escapeQuizHtml(item.question)}</p>
-      <div class="q-choices" role="radiogroup" aria-label="Q ${n} 보기">${options}</div>
+      <div class="q-choices" role="radiogroup" aria-label="문제 ${n} 보기">${options}</div>
     </div>`;
   }
 
@@ -106,9 +106,9 @@ function quizCard(item, index) {
 
   return `
     <div class="card q-card" data-index="${index}">
-      <p class="q-card__label">Q ${n}</p>
+      <p class="q-card__label">문제 ${n}.</p>
       <p class="q-card__text">${escapeQuizHtml(item.question)}</p>
-      <textarea rows="2" placeholder="${placeholder}" aria-label="Q ${n} 답안"></textarea>
+      <textarea rows="2" placeholder="${placeholder}" aria-label="문제 ${n} 답안"></textarea>
     </div>`;
 }
 

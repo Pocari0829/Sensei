@@ -12,17 +12,19 @@ export const API_BASE = "http://127.0.0.1:5000";
  * @param {string} message - 사용자가 방금 입력한 문장.
  * @param {{role: "user"|"sensei"|"system", text: string}[]} history - 지금까지의 대화 기록 (이번 message는 제외).
  * @param {string|null} nickname - 하쿠가 사용자를 부를 이름. 없으면 이름 없이 대화한다.
- * @param {{signal?: AbortSignal}} options - signal: 채팅 화면의 [멈추기] 버튼이 요청을 취소할 때 쓰는 AbortController 의 signal.
+ * @param {{signal?: AbortSignal, level?: number|null}} options
+ *   signal: 채팅 화면의 [멈추기] 버튼이 요청을 취소할 때 쓰는 AbortController 의 signal.
+ *   level: 사용자 수준 1~5 (users.level_current). 높을수록 하쿠가 더 어렵게 묻는다. 없으면 수준 없이 평소처럼.
  * @returns {Promise<{ok: true, question: string, is_correct: boolean, feedback?: string} | {ok: false, error: string, aborted?: true}>}
  *   is_correct 가 false 면 feedback 이 정오 판별 알림이다. (하쿠의 말이 아니라 "시스템 알림" 박스에 띄운다)
  *   멈추기로 취소됐으면 aborted: true 다. (오류가 아니므로 알림을 띄우지 않는다)
  */
-export async function askHaku(message, history = [], nickname = null, { signal } = {}) {
+export async function askHaku(message, history = [], nickname = null, { signal, level = null } = {}) {
   try {
     const res = await fetch(`${API_BASE}/ask-haku`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history, nickname }),
+      body: JSON.stringify({ message, history, nickname, level }),
       signal,
     });
 
@@ -96,12 +98,13 @@ export function checkSystem(message, history = []) {
  *
  * @param {{role: "user"|"sensei"|"system", text: string}[]} history - 대화 전체.
  * @param {string[]} previous - 이미 낸 문제의 지문들. 보내면 이것과 겹치지 않는 새 문제를 만든다.
+ * @param {number|null} level - 사용자 수준 1~5 (users.level_current). 높을수록 더 어려운 문제를 낸다. 없으면 수준 없이 평소처럼.
  * @returns {Promise<{ok: true, items: {type: "blank"|"choice", question: string, answers: string[], choices?: string[]}[], notice?: string} | {ok: false, error: string}>}
  *   items 는 보통 1개이고, 대화에 문제로 낼 내용이 없으면 빈 목록이다.
  *   notice 는 백엔드가 마지막 수단 모델로 만들었을 때 화면에 띄울 안내 문구다.
  */
-export function generateQuiz(history = [], previous = []) {
-  return postJson("/generate-quiz", { history, previous });
+export function generateQuiz(history = [], previous = [], level = null) {
+  return postJson("/generate-quiz", { history, previous, level });
 }
 
 /**

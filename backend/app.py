@@ -328,6 +328,17 @@ OFF_TOPIC_MESSAGE = "학습과 관련 없는 말은 하쿠가 배울 수 없어�
 _check_executor = ThreadPoolExecutor(max_workers=8)
 
 
+def _level_from(data):
+    """요청에 담긴 사용자 수준(1~5, 프론트가 users.level_current 를 보낸다). 수준이 높을수록 하쿠의 질문과 시험지 문제가 어려워진다.
+
+    없거나, 숫자가 아니거나, 범위 밖이면 None (수준 없이 평소처럼). True/False 는 숫자로 치지 않는다.
+    """
+    level = data.get("level")
+    if isinstance(level, bool) or not isinstance(level, int) or not LEVEL_MIN <= level <= LEVEL_MAX:
+        return None
+    return level
+
+
 # ─────────────────────────────────────────────
 # 1) 하쿠 꼬리질문 + 정오 판별 (동시에)
 # ─────────────────────────────────────────────
@@ -353,9 +364,9 @@ def ask_haku():
     elif nickname:
         system_instruction += prompts.NICKNAME_PROMPT.format(nickname=nickname)
 
-    # 사용자 수준 1~5 (선택). 설문의 level_init / 이후 level_current. 범위 밖이거나 숫자가 아니면 무시한다.
-    level = data.get("level")
-    if isinstance(level, int) and 1 <= level <= 5:
+    # 사용자 수준 1~5 (선택). 높을수록 하쿠가 더 어렵게 묻는다. 범위 밖이거나 숫자가 아니면 무시한다.
+    level = _level_from(data)
+    if level:
         system_instruction += prompts.LEVEL_PROMPT.format(level=level)
 
     # message 가 비어 있으면 Gemini 호출 자체가 400 으로 터진다.
@@ -563,7 +574,8 @@ def _choose_quiz_type(history, previous):
 def generate_quiz():
     """지금까지의 대화로 시험지 문제를 하나 만든다. [퀴즈 풀기] 를 눌렀을 때 호출된다.
 
-    받는 것:     {history, previous?, type?}  (previous = 이미 낸 문제의 지문들)
+    받는 것:     {history, previous?, type?, level?}  (previous = 이미 낸 문제의 지문들, level = 사용자 수준 1~5)
+        level 을 보내면 수준이 높을수록 더 어려운 문제를 낸다. (QUIZ_LEVEL_PROMPT)
         type 을 안 보내면(지금의 quiz.js) 두 단계로 만든다.
           ① _choose_quiz_type(): QUIZ_TYPE_MODEL 이 대화 내용을 보고 빈칸 주관식 / 객관식 중 더 맞는 유형을 고른다.
           ② QUIZ_MODELS 가 (앞에서부터 차례로) 고른 유형의 프롬프트(GENERATE_QUIZ / GENERATE_CHOICE_QUIZ)로 문제를 만든다.
@@ -607,6 +619,10 @@ def generate_quiz():
         prompt, schema = prompts.GENERATE_CHOICE_QUIZ, ChoiceResult
     else:
         prompt, schema = prompts.GENERATE_QUIZ, QuizResult
+    # 사용자 수준을 보냈으면 그 수준에 맞는 난이도로 만들게 한다. (높을수록 어렵게)
+    level = _level_from(data)
+    if level:
+        prompt += prompts.QUIZ_LEVEL_PROMPT.format(level=level)
 
     try:
         result, used_fallback = _generate_with_models(QUIZ_MODELS, contents, prompt, schema)

@@ -32,7 +32,8 @@
       <main class="chat__empty" id="stage">
         <!-- 정오 판별에서 틀렸을 때 말풍선 위에 뜨는 알림 -->
         <div class="stage-feedback" id="stage-feedback" hidden></div>
-        <div class="chat-greeting" id="stage-bubble">안녕!</div>
+        <!-- 처음에는 숨겨 둔다. 대화를 불러온 뒤 chat.js 의 renderStage() 가 내용을 채우고 켠다 -->
+        <div class="chat-greeting" id="stage-bubble" hidden>안녕!</div>
         <div class="chat-mascot" aria-hidden="true">
           <img class="chat-mascot__img" src="../../public/mascot.png" alt="" />
           <img class="chat-mascot__shadow" src="../../public/haku-shadow.png" alt="" />

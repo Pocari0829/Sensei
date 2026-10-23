@@ -55,6 +55,24 @@ function toSession(row) {
   };
 }
 
+// 학습과 상관없는 말(예: "히히 똥")에 붙는 경고. haku_log 에 {role: "system", kind: OFF_TOPIC, text} 로 저장된다.
+export const OFF_TOPIC = "off-topic";
+
+/** 경고가 붙은 사용자 말인지. (바로 다음 메시지가 학습과 상관없다는 경고) */
+export function isOffTopicAt(messages, i) {
+  return messages[i]?.role === "user" && messages[i + 1]?.kind === OFF_TOPIC;
+}
+
+/**
+ * Gemini(하쿠 / 문제 생성)에게 보낼 대화 기록 [{role, text}].
+ * 학습과 상관없는 말과 그 경고는 뺀다. (하쿠가 "똥이 뭐야?" 라고 묻거나, 그걸로 문제를 내지 않게)
+ */
+export function messagesForAI(messages) {
+  return messages
+    .filter((m, i) => m.kind !== OFF_TOPIC && !isOffTopicAt(messages, i))
+    .map((m) => ({ role: m.role, text: m.text }));
+}
+
 /** 문장이 너무 길면 세션 목록/헤더에 쓸 짧은 주제 이름으로 잘라준다. */
 const TOPIC_MAX_LENGTH = 10;
 

@@ -516,6 +516,43 @@ body[data-page="quiz-list"] .scroll {
 .login-primary:active {
   opacity: 0.85;
 }
+.login-primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* 이메일 로그인 / 회원가입 입력칸 (login.js) */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+}
+.login-form .login-primary {
+  margin-top: 6px;
+}
+.login-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.login-info {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--primary);
+}
 
 .login-social {
   margin-top: 32px;
@@ -550,19 +587,6 @@ body[data-page="quiz-list"] .scroll {
   margin-top: 31px;
   padding-left: 3px;
   transition: transform 0.3s ease;
-}
-/* 위 "로그인" 버튼을 누르면 잠깐 커졌다 돌아오며 시선을 끈다 */
-.login-social.is-highlight .login-social__row {
-  animation: login-social-pulse 0.6s ease;
-}
-@keyframes login-social-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
 }
 
 /* 소셜 로그인 아이콘 버튼 50x50. 카카오는 아이콘 SVG 안에 노란 원이 이미 포함돼 있다 */
@@ -623,6 +647,12 @@ body[data-page="quiz-list"] .scroll {
   padding-right: 6px;
 }
 .login-fineprint__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   margin-left: 8px;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -798,10 +828,13 @@ body[data-page="quiz-list"] .scroll {
 }
 .chat-greeting {
   width: 272px;
-  height: 49px;
+  /* 인사말이 길면 두 줄까지 늘어나도록 높이는 최소값만 정한다 */
+  min-height: 49px;
   display: grid;
   place-items: center;
-  padding-bottom: 7px;
+  padding: 8px 16px 15px;
+  text-align: center;
+  line-height: 1.4;
   border-radius: 10px;
   background: var(--card);
   box-shadow: var(--shadow-soft);
@@ -1591,4 +1624,76 @@ body.menu-open {
 .menu__logout:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* 환영 화면 (chat.js 의 showWelcome) — 앱을 다시 켰을 때 채팅 화면 위에 잠깐 덮인다 */
+.welcome {
+  /* 대화가 길어 화면이 스크롤돼도 보이는 화면 한가운데에 오도록 fixed. 폭은 폰 셸(.phone)과 같게 맞춘다. */
+  position: fixed;
+  inset: 0;
+  max-width: 390px;
+  margin: 0 auto;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px 16px;
+  background: linear-gradient(180deg, var(--card) 0%, var(--surface-tint) 100%);
+  cursor: pointer;
+  animation: welcome-in 0.35s ease-out;
+}
+/* 구름 장식(.cloud, absolute)이 말풍선과 하쿠 위로 올라오지 않게 */
+.welcome > :not(.cloud) {
+  position: relative;
+  z-index: 1;
+}
+.welcome.is-leaving {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.welcome__bubble {
+  max-width: 300px;
+  text-align: center;
+  animation: welcome-pop 0.45s 0.15s ease-out both;
+}
+.welcome__mascot img {
+  width: 200px;
+  height: auto;
+  animation: welcome-bob 2.4s ease-in-out infinite;
+}
+.welcome__sub {
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.welcome__start {
+  padding: 12px 28px;
+  font-size: 14px;
+}
+@keyframes welcome-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes welcome-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+@keyframes welcome-bob {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome,
+  .welcome__bubble,
+  .welcome__mascot img {
+    animation: none;
+  }
+  .welcome.is-leaving {
+    transition: none;
+  }
 }

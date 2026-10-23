@@ -245,7 +245,8 @@ async function loadQuiz() {
     return;
   }
 
-  const history = (session?.messages ?? []).map((m) => ({ role: m.role, text: m.text }));
+  // 학습과 상관없는 말과 그 경고는 빼고 보낸다.
+  const history = store.messagesForAI(session?.messages ?? []);
 
   if (history.length === 0) {
     replaceCards(infoCard("아직 하쿠와 나눈 대화가 없어요. 먼저 설명을 해주세요!"));

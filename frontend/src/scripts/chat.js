@@ -10,7 +10,7 @@
 import * as store from "./store.js";
 import { askHaku, judgeLevel } from "./api.js";
 import { applyAnswerLevel, getNickname, lowerLevel } from "./user.js";
-import { NICKNAME_PAGE } from "./auth.js";
+import { NICKNAME_PAGE, getCurrentUser } from "./auth.js";
 
 const phoneEl = document.querySelector(".phone");
 const dragHint = document.getElementById("drag-hint");
@@ -47,10 +47,12 @@ const DONT_KNOW_MESSAGE = "음... 모르겠어. 힌트를 줄 수 있어?";
 // 직접 설명을 이만큼 해야 [퀴즈 풀기] 를 누를 수 있다. (기획서 예상 문제점 ③: 설명이 거의 없으면 낼 문제가 없다)
 const MIN_EXPLANATIONS_FOR_QUIZ = 3;
 
-/** 세션에서 사용자가 직접 한 설명의 수. 버튼으로 보낸 말은 세지 않는다. */
+/** 세션에서 사용자가 직접 한 설명의 수. 버튼으로 보낸 말과 학습과 상관없는 말은 세지 않는다. */
 function countExplanations(session) {
-  return (session?.messages ?? []).filter(
-    (m) => m.role === "user" && m.text !== EASIER_MESSAGE && m.text !== DONT_KNOW_MESSAGE,
+  const messages = session?.messages ?? [];
+  return messages.filter(
+    (m, i) =>
+      m.role === "user" && m.text !== EASIER_MESSAGE && m.text !== DONT_KNOW_MESSAGE && !store.isOffTopicAt(messages, i),
   ).length;
 }
 
@@ -108,11 +110,13 @@ function wrongAlert(text) {
  * 저장된 메시지 하나를 화면에 그린다.
  *   user   → 사용자 말풍선
  *   system → 정오 판별 알림 (어디가 틀렸는지 짚는 빨간 박스)
+ *            kind 가 OFF_TOPIC 이면 학습과 상관없는 말에 대한 경고 (보통 시스템 알림 박스)
  *   check  → 예전 방식의 정오 판별 알림 ("틀렸어요." 만 저장된 대화). system 과 똑같이 그린다.
  *   sensei → 하쿠 말풍선
  */
 function renderMessage(m) {
   if (m.role === "user") return bubbleRowUser(m.text);
+  if (m.kind === store.OFF_TOPIC) return systemAlert(m.text);
   if (m.role === "system" || m.role === "check") return wrongAlert(m.text);
   return bubbleRowSensei(m.text);
 }
@@ -139,12 +143,15 @@ function showSessionInUrl(id) {
 /**
  * 캐릭터 화면(#stage)에 보여줄 말풍선 하나를 정한다.
  * 목록(#message-list)과 달리 캐릭터 화면은 항상 "지금 하쿠가 하고 있는 말" 한 줄만 보여준다.
- *   - 대화 전: 인사말 "안녕!"
+ *   - 대화 전: 이번 접속의 인사말 (greetingText. 고르기 전이면 "안녕!")
  *   - 그 밖: 가장 최근 하쿠의 말. 그 턴에 정오 판별에서 틀렸으면(system / 예전 check) 말풍선 위에 빨간 알림도 띄운다.
+ *     학습과 상관없는 말을 했으면(kind OFF_TOPIC) 보라색 경고를 띄우고, 말풍선은 그 전 하쿠의 말을 그대로 둔다.
  *   - 마지막이 사용자 말(하쿠 답을 기다리는 중이거나 [멈추기]로 취소함): 그 직전 하쿠 말을 그대로 유지해서 보여준다
  *     (답이 오면 render()가 다시 불려서 새 말로 바뀐다)
  */
 function renderStage(messages) {
+  // 처음에는 숨겨 둔 말풍선(chat.html)을 이때 켠다. (불러오기 전에 "안녕!" 이 잠깐 보였다가 바뀌지 않게)
+  stageBubble.hidden = false;
   stageBubble.classList.remove("is-typing");
   stageBubble.removeAttribute("aria-label");
   stageFeedback.hidden = true;
@@ -152,7 +159,7 @@ function renderStage(messages) {
 
   if (messages.length === 0) {
     stageBubble.className = "chat-greeting";
-    stageBubble.textContent = "안녕!";
+    stageBubble.textContent = greetingText ?? "안녕!";
     return;
   }
 
@@ -167,17 +174,19 @@ function renderStage(messages) {
   }
 
   const feedback = turn.find((m) => m.role === "system" || m.role === "check");
+  const offTopic = feedback?.kind === store.OFF_TOPIC;
   if (feedback && !waiting) {
-    stageFeedback.innerHTML = wrongAlert(feedback.text);
+    stageFeedback.innerHTML = offTopic ? systemAlert(feedback.text) : wrongAlert(feedback.text);
     stageFeedback.hidden = false;
   }
 
-  const hakuText = turn.findLast((m) => m.role === "sensei")?.text;
+  // 학습과 상관없는 말에는 하쿠가 대답하지 않으므로, 그 전에 하쿠가 한 말을 그대로 보여준다.
+  const hakuText = (offTopic ? messages : turn).findLast((m) => m.role === "sensei")?.text;
   if (!hakuText) {
     // 아직 하쿠가 한 마디도 안 한 상태(첫 메시지를 보내자마자 [멈추기] 등) — 인사말로 둔다.
     // (대답을 기다리는 중이면 바로 뒤에 showStageTyping() 이 "..." 로 바꾼다)
     stageBubble.className = "chat-greeting";
-    stageBubble.textContent = "안녕!";
+    stageBubble.textContent = greetingText ?? "안녕!";
     return;
   }
   stageBubble.className = "chat-greeting chat-greeting--talk";
@@ -449,11 +458,8 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
   // 하쿠의 대답을 기다리는 사이에 "새 주제" 를 눌러도, 대답은 원래 세션에 붙도록 붙잡아 둔다.
   const session = activeSession;
 
-  // 하쿠에게는 "이번 메시지 이전까지"의 대화만 history로 넘긴다.
-  const historyBeforeThisTurn = session.messages.map((m) => ({
-    role: m.role,
-    text: m.text,
-  }));
+  // 하쿠에게는 "이번 메시지 이전까지"의 대화만 history로 넘긴다. (학습과 상관없는 말과 그 경고는 뺀다)
+  const historyBeforeThisTurn = store.messagesForAI(session.messages);
 
   try {
     await store.addMessage(session, "user", text);
@@ -479,7 +485,14 @@ async function sendMessage(rawText, { skipLevel = false } = {}) {
   // (성공하면 바로 아래에서 새 말로 다시 그린다. 실패해도 "..." 가 그대로 남지 않는다)
   render();
 
-  if (result.ok) {
+  if (result.ok && result.off_topic) {
+    // 학습과 상관없는 말이면 하쿠는 대답하지 않고 경고만 남긴다. (설명 횟수에도 안 들어간다)
+    session.messages.push({ role: "system", kind: store.OFF_TOPIC, text: result.warning, ts: Date.now() });
+    if (session === activeSession) render();
+    store
+      .saveSession(session)
+      .catch((err) => showAlert(`방금 대화를 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${err.message})`));
+  } else if (result.ok) {
     // 정오 판별에서 틀렸으면, 하쿠의 대답 앞에 "시스템 알림" 을 끼워 넣는다. (사용자 말 → 알림 → 하쿠 순서)
     // 아래 addMessage 가 대화 전체를 저장하므로 여기서는 붙이기만 한다.
     // 하쿠에게 보내는 대화 기록에서는 백엔드가 이 알림을 뺀다. (하쿠는 판정을 모른다)
@@ -583,7 +596,7 @@ quizBtn.addEventListener("click", () => {
 // ─────────────────────────────────────────────
 // 닉네임: 아직 정하지 않았으면 이름 정하기 화면(nickname.html)에서 먼저 정하고 온다.
 // 하쿠에게 질문할 때 같이 보내서 하쿠가 그 이름으로 부르게 한다 (app.py 의 ask_haku).
-// 빈 화면 인사말은 시안 문구 그대로 "안녕!" 고정이라 여기서는 쓰지 않는다.
+// 대화 전 인사말은 닉네임 없이 아래 "하쿠의 인사말" 에서 고른다.
 // ─────────────────────────────────────────────
 
 /** 닉네임을 불러온다. 아직 없으면 이름 정하기 화면으로 보내고 true 를 돌려준다. */
@@ -633,7 +646,10 @@ const QUIZ_NOTICES = {
 async function init() {
   // 주소의 ?notice= 는 세션을 불러오면서 주소가 바뀌기 전에 먼저 읽어 둔다.
   const quizNotice = QUIZ_NOTICES[new URLSearchParams(window.location.search).get("notice")];
-  render();
+  // "새 대화"(?new)로 왔을 때만 하쿠 화면을 바로 그린다.
+  // 그 밖에는 이어서 볼 대화가 있을 수 있으므로, 불러온 뒤(loadSession)에 그린다.
+  // (먼저 그리면 학습 기록에서 세션을 눌렀을 때 하쿠의 인사 "안녕!" 이 잠깐 보였다가 최근 하쿠의 말로 바뀐다)
+  if (new URLSearchParams(window.location.search).has("new")) render();
 
   // 불러오는 동안 입력을 막는다.
   composerInput.disabled = true;
@@ -641,15 +657,114 @@ async function init() {
   try {
     // 닉네임이 없으면 이름 정하기 화면으로 넘어가므로 세션은 불러오지 않는다.
     const leaving = await loadNickname();
-    if (!leaving) await loadSession();
+    if (!leaving) {
+      greetingText = await chooseVisitGreeting();
+      await loadSession();
+    }
   } finally {
     composerInput.disabled = false;
     sendBtn.disabled = false;
     composerInput.focus();
   }
+  // "새 대화"(?new)로 왔으면 인사말을 고르기 전에 그렸으므로, 고른 인사말로 바꾼다.
+  showGreeting();
 
   // 알림은 저장하지 않는다. loadSession() 이 주소를 ?session= 만 남기고 바꾸므로 새로고침하면 다시 뜨지 않는다.
   if (quizNotice) showAlert(quizNotice);
+  else if (nickname) showWelcome();
+}
+
+// ─────────────────────────────────────────────
+// 하쿠의 인사말: 앱을 켤 때 하나를 골라, 환영 화면과 대화 전 하쿠 화면의 말풍선에 같이 보여준다.
+//   처음 만남(이 기기에서 이 계정으로 처음 접속) → FIRST_GREETING
+//   그 뒤로 접속할 때                          → RETURN_GREETINGS 중 하나 (랜덤)
+// "처음 만남" 은 이 브라우저(localStorage)에 계정별로 기억한다. 저장소가 막혀 있으면 다시 온 사람으로 본다.
+// ─────────────────────────────────────────────
+const FIRST_GREETING = "안녕! 나는 하쿠라고 해. 앞으로 잘 부탁해!";
+const RETURN_GREETINGS = [
+  "또 왔네! 보고 싶었어. 오늘은 뭘 알려줄거야?",
+  "기다렸어!! 오늘도 열심히 배워볼게!",
+  "오늘은 또 어떤 새로운 걸 알려줄거야? 벌써 기대된다!",
+  "하이! 오늘은 또 어떤 새로운 걸 배워볼까? 준비 완료!",
+];
+const MET_KEY_PREFIX = "sensei.met.";
+
+// 이번 접속에서 보여주는 인사말. 고르기 전(null)이면 하쿠 화면은 기본 인사("안녕!")를 보여준다.
+let greetingText = null;
+
+function pickReturnGreeting() {
+  return RETURN_GREETINGS[Math.floor(Math.random() * RETURN_GREETINGS.length)];
+}
+
+/** 이번 접속의 인사말을 고른다. 이 계정으로 처음 왔으면 자기소개, 아니면 다시 온 사람용 인사 중 하나. */
+async function chooseVisitGreeting() {
+  try {
+    const user = await getCurrentUser();
+    const key = MET_KEY_PREFIX + (user?.id ?? "");
+    if (user && !localStorage.getItem(key)) {
+      localStorage.setItem(key, "1");
+      return FIRST_GREETING;
+    }
+  } catch {
+    // 확인하지 못하면 다시 온 사람으로 본다. (자기소개를 또 하는 것보다 자연스럽다)
+  }
+  return pickReturnGreeting();
+}
+
+/** 아직 대화가 없으면 하쿠 화면의 말풍선을 이번 인사말로 다시 그린다. */
+function showGreeting() {
+  if (!activeSession?.messages?.length) renderStage([]);
+}
+
+// ─────────────────────────────────────────────
+// 환영 화면: 로그인한 사람이 앱을 켰을 때, 채팅 화면 위에 하쿠가 크게 나와서 위의 인사말로 반겨 준다.
+// 화면을 누르거나 [시작하기] 를 누르면(또는 몇 초 지나면) 사라진다.
+// "앱을 켰다" = 이 탭(설치한 앱이면 앱 창)에서 처음 열었다. 다른 화면에 갔다 와도 다시 나오지 않는다.
+// 대화 기록에는 저장하지 않는다.
+// ─────────────────────────────────────────────
+const WELCOMED_KEY = "sensei.welcomed";
+// 아무것도 누르지 않아도 이만큼 지나면 사라진다. (ms)
+const WELCOME_AUTO_CLOSE = 4000;
+
+function showWelcome() {
+  try {
+    if (sessionStorage.getItem(WELCOMED_KEY)) return;
+    sessionStorage.setItem(WELCOMED_KEY, "1");
+  } catch {
+    // 저장소가 막혀 있으면(시크릿 모드 등) 화면을 열 때마다 반겨도 괜찮다.
+  }
+
+  const text = greetingText ?? pickReturnGreeting();
+  phoneEl.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="welcome" id="welcome" role="dialog" aria-label="환영 인사">
+      <span class="cloud cloud--1"></span>
+      <span class="cloud cloud--2"></span>
+      <span class="cloud cloud--3"></span>
+      <div class="welcome__bubble bubble bubble--sensei bubble--greeting">${escapeHtml(text)}</div>
+      <div class="welcome__mascot blob-stage">
+        <img src="../../public/mascot.png" alt="하쿠" />
+      </div>
+      <p class="welcome__sub">오늘 배운 걸 하쿠에게 가르쳐 줘!</p>
+      <button type="button" class="pill pill--primary welcome__start">시작하기</button>
+    </div>`,
+  );
+
+  const el = document.getElementById("welcome");
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    clearTimeout(timer);
+    el.classList.add("is-leaving");
+    // 사라지는 애니메이션이 끝나면 지운다. (애니메이션을 끈 기기는 바로)
+    setTimeout(() => el.remove(), 300);
+    composerInput.focus();
+  };
+  const timer = setTimeout(close, WELCOME_AUTO_CLOSE);
+  el.addEventListener("click", close);
+  el.querySelector(".welcome__start").focus();
 }
 
 document.addEventListener("DOMContentLoaded", init);

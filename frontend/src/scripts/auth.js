@@ -14,6 +14,8 @@ import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 // 모든 페이지가 같은 폴더(src/pages)에 있으므로 상대 경로로 충분하다.
 export const LOGIN_PAGE = "./index.html";
 export const HOME_PAGE = "./chat.html";
+// 닉네임을 아직 정하지 않은 사람이 먼저 가는 화면.
+export const NICKNAME_PAGE = "./nickname.html";
 
 /** 지금 로그인한 사용자. 로그인 안 했으면 null. */
 export async function getCurrentUser() {

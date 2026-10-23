@@ -9,7 +9,8 @@
 
 import * as store from "./store.js";
 import { askHaku } from "./api.js";
-import { NICKNAME_MAX, getNickname, lowerLevel, saveNickname } from "./user.js";
+import { getNickname, lowerLevel } from "./user.js";
+import { NICKNAME_PAGE } from "./auth.js";
 
 const phoneEl = document.querySelector(".phone");
 const dragHint = document.getElementById("drag-hint");
@@ -39,10 +40,6 @@ let isSending = false;
 
 // 하쿠가 부르는 이름. DB(users.nickname)에서 불러오고, 하쿠에게 질문할 때 같이 보낸다.
 let nickname = null;
-// 하쿠의 첫 인사(닉네임 정하기) 중인지, 그리고 그동안 화면에만 보이는 말풍선들.
-// 첫 인사 말풍선은 세션에 저장하지 않는다. (아래 "하쿠의 첫 인사" 참고)
-let askingNickname = false;
-let introMessages = [];
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -110,29 +107,26 @@ function showSessionInUrl(id) {
 
 /** 현재 세션 상태(activeSession)에 맞춰 화면 전체를 다시 그린다. */
 function render() {
-  const sessionMessages = activeSession?.messages ?? [];
-  const inSession = sessionMessages.length > 0;
-  // 화면에는 첫 인사 말풍선(있으면) 뒤에 세션 대화를 이어서 보여준다.
-  const shown = [...introMessages, ...sessionMessages];
-  const hasMessages = shown.length > 0;
+  const messages = activeSession?.messages ?? [];
+  const hasMessages = messages.length > 0;
 
   // 대화가 시작되면 conversation.html 이 쓰던 톤(연보라 배경)으로,
   // 아직 시작 전이면 chat.html 이 쓰던 흰 배경으로 — 기존 두 디자인을 상태로 재현한다.
   phoneEl.classList.toggle("phone--tinted", hasMessages);
 
-  dragHint.hidden = !inSession;
-  idleHeader.hidden = inSession;
-  topicHeader.hidden = !inSession;
+  dragHint.hidden = !hasMessages;
+  idleHeader.hidden = hasMessages;
+  topicHeader.hidden = !hasMessages;
   emptyState.hidden = hasMessages;
   messageList.hidden = !hasMessages;
-  quickActions.hidden = !inSession;
+  quickActions.hidden = !hasMessages;
 
   if (!hasMessages) return;
 
-  if (inSession) topicNameEl.textContent = activeSession.topic || "학습 중";
+  topicNameEl.textContent = activeSession.topic || "학습 중";
   messageList.innerHTML =
     `<p class="day-divider">오늘</p>` +
-    shown
+    messages
       .map((m) => {
         if (m.role === "user") return bubbleRowUser(m.text);
         if (m.role === "check") return checkAlert();
@@ -195,14 +189,6 @@ function typeLastSenseiBubble() {
 async function sendMessage(rawText) {
   const text = rawText.trim();
   if (!text || isSending) return;
-
-  // 첫 인사 중이면, 이번에 보낸 말은 설명이 아니라 닉네임이다.
-  if (askingNickname) {
-    composerInput.value = "";
-    await submitNickname(text);
-    composerInput.focus();
-    return;
-  }
 
   setSending(true);
   composerInput.value = "";
@@ -307,7 +293,6 @@ composerForm.addEventListener("submit", (e) => {
 newTopicBtn.addEventListener("click", () => {
   // 새 세션은 첫 메시지를 보낼 때 DB 에 만든다. 그 전까지는 빈 화면이다.
   activeSession = null;
-  introMessages = [];
   // 새로고침해도 빈 화면이 유지되게 주소에 표시한다. (?new 가 없으면 최근 세션이 열린다)
   window.history.replaceState(null, "", "?new");
   render();
@@ -381,81 +366,32 @@ quizBtn.addEventListener("click", () => {
 });
 
 // ─────────────────────────────────────────────
-// 하쿠의 첫 인사 — 닉네임 정하기.
-// 닉네임(users.nickname)이 아직 없으면 채팅에 들어오자마자 하쿠가 뭐라고 부를지 묻는다.
-// 이때 주고받는 말은 학습 대화가 아니므로 세션에 저장하지 않고(하쿠 / 퀴즈에게 안 넘어감)
-// 화면에만 보여준다(introMessages). 정한 닉네임은 DB 에 저장하고, 이후 하쿠에게 같이 보내서
+// 닉네임: 아직 정하지 않았으면 이름 정하기 화면(nickname.html)에서 먼저 정하고 온다.
+// 정한 닉네임은 빈 화면 인사말에 넣고, 하쿠에게 질문할 때 같이 보내서
 // 하쿠가 그 이름으로 부르게 한다 (app.py 의 ask_haku).
 // ─────────────────────────────────────────────
-const NICKNAME_PLACEHOLDER = "예) 지수, 민준, 선생님...";
-const defaultPlaceholder = composerInput.placeholder;
-
-/** 화면에만 보이는 첫 인사 말풍선을 하나 붙인다. 하쿠의 말이면 타이핑 효과로 보여준다. */
-function addIntro(role, text) {
-  introMessages.push({ role, text });
-  render();
-  if (role === "sensei") typeLastSenseiBubble();
-}
-
-/** "지수라고" / "민준이라고": 이름 끝 글자에 받침이 있으면 "이라고" 를 붙인다. */
-function callName(name) {
-  const code = name.charCodeAt(name.length - 1) - 0xac00;
-  const isHangul = code >= 0 && code <= 0xd7a3 - 0xac00;
-  return isHangul && code % 28 === 0 ? `${name}라고` : `${name}이라고`;
-}
 
 /** 빈 화면 인사말("안녕! 오늘은 뭘 가르쳐 줄 거야?")에도 닉네임을 넣는다. */
 function showGreetingName() {
   greetingName.textContent = nickname ? ` ${nickname}` : "";
 }
 
-function startNicknameIntro() {
-  askingNickname = true;
-  // 첫 인사는 빈 화면에서 시작한다. (보던 세션은 학습 기록에 그대로 남아 있다)
-  activeSession = null;
-  composerInput.placeholder = NICKNAME_PLACEHOLDER;
-  addIntro("sensei", "안녕! 나는 하쿠야 🦜 앞으로 같이 공부할 텐데, 하쿠가 뭐라고 불러주면 좋아?");
-}
-
-async function submitNickname(name) {
-  addIntro("user", name);
-
-  if (name.length > NICKNAME_MAX) {
-    addIntro("sensei", `음… 조금 더 짧게 알려줄래? (${NICKNAME_MAX}글자까지)`);
-    return;
-  }
-
-  setSending(true);
-  try {
-    await saveNickname(name);
-  } catch (err) {
-    showAlert(`닉네임을 저장하지 못했어요. 다시 입력해주세요. (${err.message})`);
-    setSending(false);
-    return;
-  }
-
-  nickname = name;
-  askingNickname = false;
-  composerInput.placeholder = defaultPlaceholder;
-  showGreetingName();
-  addIntro("sensei", `알겠어! 앞으로 ${callName(name)} 부를게 🦜 오늘은 어떤 걸 가르쳐 줄 거야?`);
-  setSending(false);
-}
-
+/** 닉네임을 불러온다. 아직 없으면 이름 정하기 화면으로 보내고 true 를 돌려준다. */
 async function loadNickname() {
   try {
     nickname = await getNickname();
   } catch (err) {
-    // 못 불러와도 채팅은 할 수 있어야 하므로, 첫 인사 없이 그냥 진행한다.
+    // 못 불러와도 채팅은 할 수 있어야 하므로, 닉네임 없이 그냥 진행한다.
     console.warn("닉네임을 불러오지 못했어요:", err);
-    return;
+    return false;
   }
 
-  if (nickname) {
-    showGreetingName();
-  } else {
-    startNicknameIntro();
+  if (!nickname) {
+    window.location.replace(NICKNAME_PAGE);
+    return true;
   }
+  showGreetingName();
+  return false;
 }
 
 /**
@@ -483,12 +419,12 @@ async function loadSession() {
 async function init() {
   render();
 
-  // 불러오는 동안 입력을 막는다. (그 사이에 보낸 말이 닉네임 대신 하쿠에게 가지 않게)
+  // 불러오는 동안 입력을 막는다.
   setSending(true);
   try {
-    await loadNickname();
-    // 닉네임을 묻는 중이면(첫 인사) 빈 화면에서 시작하므로 세션은 불러오지 않는다.
-    if (!askingNickname) await loadSession();
+    // 닉네임이 없으면 이름 정하기 화면으로 넘어가므로 세션은 불러오지 않는다.
+    const leaving = await loadNickname();
+    if (!leaving) await loadSession();
   } finally {
     setSending(false);
     composerInput.focus();

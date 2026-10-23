@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────
 // 로그인한 사용자의 정보(DB 의 users 테이블) 읽기 / 쓰기.
-//   닉네임  첫 채팅에서 하쿠가 물어보고 정한다 (chat.js).
+//   닉네임  처음 로그인했을 때 이름 정하기 화면에서 정한다 (nickname.js).
 //   수준    "더 쉽게" 를 누를 때마다 한 단계씩 내려간다 (chat.js).
 // ─────────────────────────────────────────────
 
@@ -9,6 +9,15 @@ import { requireUser } from "./auth.js";
 
 // 프로필 화면의 닉네임 입력칸(maxlength)과 같은 값.
 export const NICKNAME_MAX = 16;
+
+// 눈에 안 보이는 글자: 한글 채움 문자(U+3164 등)와 폭 없는 공백(U+200B 등).
+// 이것만 넣으면 빈칸 검사를 통과해서, 인사말에 이름이 없는 것처럼("안녕 !") 보이므로 뺀다.
+const INVISIBLE_CHARS = /[\u115F\u1160\u3164\uFFA0\u200B-\u200D\u2060\uFEFF]/g;
+
+/** 닉네임 입력을 다듬는다. 보이지 않는 글자와 앞뒤 공백을 빼고, 남는 게 없으면 빈 문자열. */
+export function cleanNickname(text) {
+  return text.replace(INVISIBLE_CHARS, "").trim();
+}
 
 /**
  * users 행에 upsert 할 값. 이메일은 로그인 정보에 있을 때만 같이 쓴다.

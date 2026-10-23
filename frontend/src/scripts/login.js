@@ -14,7 +14,24 @@
 // ─────────────────────────────────────────────
 
 import { GOOGLE_CLIENT_ID } from "./config.js";
-import { HOME_PAGE, getCurrentUser, signInWithGoogleToken, signInWithKakao } from "./auth.js";
+import { HOME_PAGE, NICKNAME_PAGE, getCurrentUser, signInWithGoogleToken, signInWithKakao } from "./auth.js";
+import { getNickname } from "./user.js";
+
+/**
+ * 로그인을 마친 뒤 갈 곳. 닉네임을 아직 안 정했으면(처음 가입) 이름 정하기 화면, 정했으면 채팅.
+ * 닉네임 확인이 실패하면 일단 채팅으로 보낸다. (채팅 화면이 한 번 더 확인한다)
+ */
+async function goAfterLogin() {
+  let nickname = null;
+  try {
+    nickname = await getNickname();
+  } catch (err) {
+    console.warn("닉네임을 확인하지 못했어요:", err);
+    window.location.replace(HOME_PAGE);
+    return;
+  }
+  window.location.replace(nickname ? HOME_PAGE : NICKNAME_PAGE);
+}
 
 const googleBtnHost = document.getElementById("google-login-btn");
 const kakaoBtn = document.getElementById("kakao-login-btn");
@@ -86,7 +103,7 @@ async function startGoogleLogin() {
     callback: async ({ credential }) => {
       try {
         await signInWithGoogleToken(credential, nonce.raw);
-        window.location.replace(HOME_PAGE);
+        await goAfterLogin();
       } catch (err) {
         showError(`로그인하지 못했어요: ${err.message}`);
       }
@@ -123,9 +140,10 @@ async function init() {
     window.history.replaceState(null, "", window.location.pathname + keep);
   }
 
-  // 이미 로그인돼 있으면(카카오에서 막 돌아온 경우 포함) Google 에 묻지 않고 바로 채팅으로 간다.
+  // 이미 로그인돼 있으면(카카오에서 막 돌아온 경우 포함) Google 에 묻지 않고 바로 넘어간다.
+  // (닉네임이 없으면 이름 정하기 화면, 있으면 채팅)
   if (await getCurrentUser()) {
-    window.location.replace(HOME_PAGE);
+    await goAfterLogin();
     return;
   }
 

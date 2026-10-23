@@ -1,14 +1,14 @@
 // ─────────────────────────────────────────────
 // profile.html 전용 스크립트.
-// 닉네임은 DB(users.nickname)에 있다. 첫 채팅에서 하쿠가 물어보고 정한 값을 여기서 고칠 수 있다.
+// 닉네임은 DB(users.nickname)에 있다. 처음 로그인할 때 이름 정하기 화면에서 정한 값을 여기서 고칠 수 있다.
 // 학습 통계는 DB 에 쌓인 내 세션 기록(store.js)에서 계산한다.
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
 import { signOut } from "./auth.js";
-import { getNickname, saveNickname } from "./user.js";
+import { cleanNickname, getNickname, saveNickname } from "./user.js";
 
-// 아직 닉네임을 정하지 않았을 때(첫 채팅 전) 보여줄 이름.
+// 아직 닉네임을 정하지 않았을 때(이름 정하기 화면을 거치기 전) 보여줄 이름.
 const DEFAULT_NICKNAME = "게스트 학습자";
 
 const nicknameText = document.getElementById("nickname-text");
@@ -56,7 +56,7 @@ function exitEditMode() {
 editBtn.addEventListener("click", enterEditMode);
 
 saveBtn.addEventListener("click", async () => {
-  const value = nicknameInput.value.trim();
+  const value = cleanNickname(nicknameInput.value);
 
   // 비워서 저장하면 바꾸지 않은 것으로 본다.
   if (!value || value === profile.nickname) {

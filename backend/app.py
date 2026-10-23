@@ -255,7 +255,7 @@ def ask_haku():
     # 지금까지의 대화 기록 (선택). 프론트가 안 보내면 그냥 이번 메시지 하나로만 대화한다.
     history = data.get("history", [])
 
-    # 하쿠가 사용자를 부를 이름 (선택). 첫 채팅에서 하쿠가 물어보고 정한 닉네임이다.
+    # 하쿠가 사용자를 부를 이름 (선택). 처음 로그인할 때 이름 정하기 화면에서 정한 닉네임이다.
     # 프롬프트에 그대로 들어가므로 프론트의 최대 길이(16글자)를 넘는 부분은 자른다.
     nickname = str(data.get("nickname") or "").strip()[:16]
     system_instruction = prompts.SYSTEM_PROMPT

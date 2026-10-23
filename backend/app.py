@@ -111,7 +111,7 @@ class QuizItem(BaseModel):
 
 # 시험지 (문제 목록)
 class QuizResult(BaseModel):
-    items: list[QuizItem] = Field(description="문제는 최대 1개. 낼 만한 내용이 없으면 억지로 만들지 말고 빈 목록.")
+    items: list[QuizItem] = Field(description="문제는 1개. 대화에 학습 내용이 전혀 없을 때만 빈 목록.")
 
 
 # 객관식 문제 하나
@@ -123,7 +123,7 @@ class ChoiceItem(BaseModel):
 
 # 객관식 시험지 (문제 목록)
 class ChoiceResult(BaseModel):
-    items: list[ChoiceItem] = Field(description="문제는 최대 1개. 낼 만한 내용이 없으면 억지로 만들지 말고 빈 목록.")
+    items: list[ChoiceItem] = Field(description="문제는 1개. 대화에 학습 내용이 전혀 없을 때만 빈 목록.")
 
 
 # 빈칸 주관식 채점 결과 (grade_quiz). 이유(reason)를 먼저 쓰게 해서 따져 본 뒤에 맞았는지 정하게 한다.
@@ -224,12 +224,18 @@ def _generate_with_retry(attempts=3, **kwargs):
             time.sleep(2 * (attempt + 1))
 
 
+# 하루 사용량을 다 쓴 모델 → 이 시각(time.time())까지는 건너뛴다. 서버를 다시 켜면 비워진다.
+# 하루 한도는 미국 서부 시간 자정에 풀리는데 정확한 시각을 따지지 않고, 한 시간마다 한 번씩만 다시 확인한다.
+_day_exhausted_until = {}
+DAY_EXHAUSTED_SKIP_SECONDS = 60 * 60
+
+
 def _generate_with_models(models, contents, prompt, schema=None, temperature=None):
     """models 를 앞에서부터 시도해서 schema 모양의 답을 받는다. 돌려주는 것: (결과, 맨 뒤 모델로 받았는지).
     schema 가 None 이면 JSON 이 아니라 그냥 글(res.text)을 받는다. (하쿠)
 
     한 모델이 실패하면(사용량 초과, 혼잡, 시간 초과, 응답이 깨짐 등) 기다리지 않고 바로 다음 모델로 넘어간다.
-    모델이 하나뿐이면 혼잡할 때 잠깐 기다렸다가 다시 시도한다. 모두 실패하면 마지막 오류를 그대로 올린다.
+    맨 뒤 모델(하나뿐이면 그 모델)은 혼잡할 때 잠깐 기다렸다가 한 번 더 시도한다. 모두 실패하면 마지막 오류를 그대로 올린다.
     하쿠(HAKU_MODELS), 정오 판별(CHECK_MODELS), 문제 생성(QUIZ_MODELS), 채점(GRADE_MODELS) 이 쓴다.
     """
     def config(timeout):
@@ -244,21 +250,27 @@ def _generate_with_models(models, contents, prompt, schema=None, temperature=Non
     def parse(res):
         return _parse(res, schema) if schema else res.text
 
-    if len(models) == 1:
-        res = _generate_with_retry(model=models[0], contents=contents, config=config(LAST_MODEL_TIMEOUT_MS))
-        return parse(res), False
+    # 오늘 사용량을 다 쓴 모델은 한동안 건너뛴다. (부를 때마다 0.5초씩 버리고 실패하므로)
+    # 단, 맨 뒤 모델은 넘어갈 곳이 없으므로 건너뛰지 않는다.
+    now = time.time()
+    tries = [m for m in models[:-1] if _day_exhausted_until.get(m, 0) <= now] + models[-1:]
 
-    last = len(models) - 1
-    for i, model in enumerate(models):
+    for i, model in enumerate(tries):
+        is_last = i == len(tries) - 1
         try:
-            res = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config(LAST_MODEL_TIMEOUT_MS if i == last else MODEL_TIMEOUT_MS),
-            )
-            return parse(res), i == last
+            if is_last:
+                # 맨 뒤 모델은 잠깐 혼잡(503)하면 조금 기다렸다가 한 번 더 시도한다.
+                res = _generate_with_retry(
+                    attempts=2, model=model, contents=contents, config=config(LAST_MODEL_TIMEOUT_MS)
+                )
+            else:
+                res = client.models.generate_content(model=model, contents=contents, config=config(MODEL_TIMEOUT_MS))
+            return parse(res), is_last and len(models) > 1
         except Exception as e:
-            if i == last:
+            if "PerDay" in str(e):
+                _day_exhausted_until[model] = time.time() + DAY_EXHAUSTED_SKIP_SECONDS
+            if is_last:
+                app.logger.warning("모델 %s 도 실패 (더 넘어갈 모델 없음): %s", model, str(e)[:300])
                 raise
             app.logger.warning("모델 %s 실패, 다음 모델로 넘어감: %s", model, str(e)[:200])
 

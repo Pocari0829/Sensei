@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- 기본 프로필 사진: 회색 바탕 + 흰 사람 실루엣. 화면에서 동그랗게 잘라 쓴다 (style.css .profile__avatar) -->
+  <rect width="96" height="96" fill="#dfe3ea" />
+  <circle cx="48" cy="38" r="17" fill="#ffffff" />
+  <path d="M13 96c0-20 15.7-33 35-33s35 13 35 33z" fill="#ffffff" />
+</svg>

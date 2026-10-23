@@ -163,16 +163,78 @@ export async function hideSession(id) {
   if (data.length === 0) throw new Error("이미 삭제됐거나 내 기록이 아니에요.");
 }
 
-/** 프로필 화면의 학습 통계. */
-export async function getStats() {
+// ─────────────────────────────────────────────
+// 프로필 화면 (최근 학습 주제 + 대시보드: 학습 잔디 / 퀴즈 정답률 / 다시 볼 개념)
+// ─────────────────────────────────────────────
+
+/** 날짜 → "YYYY-MM-DD" (내 컴퓨터 시간 기준). 학습 잔디의 칸과 gap_records.last_seen 이 이 모양이다. */
+export function dayKey(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// 다시 볼 개념을 몇 개까지 보여줄지.
+const GAP_TOP = 3;
+
+/**
+ * 프로필 화면에 필요한 기록을 한 번에 읽는다. (세션은 한 번만 읽어서 여러 곳에 같이 쓴다)
+ *   lastTopic  가장 최근에 대화한 세션의 주제. 없으면 null.
+ *   activity   날짜("YYYY-MM-DD")별로 내가 보낸 설명(메시지) 수. {"2026-10-24": 5, ...}
+ *   quiz       채점한 문제 수(graded)와 그중 맞힌 문제 수(correct). 시험지를 "제출" 해야 채점된다.
+ *   gaps       다시 볼 개념. 틀린 횟수(wrong) + "더 쉽게" 누른 횟수(easy) 가 많은 순서로 최대 3개.
+ *              sessionId 는 그 주제로 대화한 가장 최근 세션 (퀴즈로 바로 가는 링크에 쓴다). 없으면 null.
+ * 숨긴(삭제한) 세션의 대화와 퀴즈는 세지 않는다.
+ */
+export async function getProfileStats() {
+  const user = await requireUser();
   const sessions = await getAllSessions();
-  const totalMessages = sessions.reduce((sum, s) => sum + s.messages.length, 0);
-  const lastTopic = sessions.find((s) => s.topic)?.topic ?? null;
+
+  // 메시지마다 보낸 시각(ts)이 있다. 시각이 없는 예전 메시지는 세션을 시작한 날로 친다.
+  const activity = {};
+  for (const session of sessions) {
+    for (const m of session.messages) {
+      if (m.role !== "user") continue;
+      const day = dayKey(new Date(m.ts ?? session.createdAt));
+      activity[day] = (activity[day] ?? 0) + 1;
+    }
+  }
+
+  // quiz_items 에는 user_id 가 없어서 내 세션 id 들로 찾는다. 채점한(is_correct 가 있는) 문제만.
+  const quiz = { graded: 0, correct: 0 };
+  if (sessions.length > 0) {
+    const { data, error } = await supabase
+      .from("quiz_items")
+      .select("is_correct")
+      .in("session_id", sessions.map((s) => s.id))
+      .not("is_correct", "is", null);
+    if (error) throw error;
+    quiz.graded = data.length;
+    quiz.correct = data.filter((row) => row.is_correct).length;
+  }
+
+  const { data: gapRows, error: gapError } = await supabase
+    .from("gap_records")
+    .select("concept, occurrence, easy_btn_count, last_seen")
+    .eq("user_id", user.id);
+  if (gapError) throw gapError;
+  const gaps = gapRows
+    .map((row) => ({
+      concept: row.concept,
+      wrong: row.occurrence ?? 0,
+      easy: row.easy_btn_count ?? 0,
+      lastSeen: row.last_seen ?? "",
+    }))
+    .filter((g) => g.concept && g.wrong + g.easy > 0)
+    // 횟수가 같으면 최근에 나온 개념이 먼저.
+    .sort((a, b) => b.wrong + b.easy - (a.wrong + a.easy) || b.lastSeen.localeCompare(a.lastSeen))
+    .slice(0, GAP_TOP)
+    .map((g) => ({ ...g, sessionId: sessions.find((s) => s.topic === g.concept)?.id ?? null }));
 
   return {
-    totalSessions: sessions.length,
-    totalMessages,
-    lastTopic,
+    lastTopic: sessions.find((s) => s.topic)?.topic ?? null,
+    activity,
+    quiz,
+    gaps,
   };
 }
 
@@ -263,9 +325,7 @@ export async function addCorrection(sessionId, errorText, feedback) {
 
 /** 오늘 날짜 "YYYY-MM-DD" (내 컴퓨터 시간 기준). gap_records.last_seen 이 날짜(date) 칸이라서. */
 function today() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return dayKey(new Date());
 }
 
 /**

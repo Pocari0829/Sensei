@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────
 // 로그인한 사용자의 정보(DB 의 users 테이블) 읽기 / 쓰기.
 //   닉네임  처음 로그인했을 때 이름 정하기 화면에서 정한다 (nickname.js).
+//   사진    프로필 화면에서 고른다 (profile.js). 없으면 기본 사진을 보여준다.
 //   수준    "더 쉽게" 를 누르면 한 단계 내려가고, 설명을 보낼 때마다 그 설명의 수준 쪽으로 조금씩 움직인다 (chat.js).
 // ─────────────────────────────────────────────
 
@@ -51,6 +52,43 @@ export async function saveNickname(nickname) {
   const { error } = await supabase
     .from("users")
     .upsert(userRow(user, { nickname }));
+  if (error) throw error;
+}
+
+// ─────────────────────────────────────────────
+// 프로필 사진(users.avatar): 파일 저장소(Storage)가 아니라 칸에 글자(data URL)로 바로 넣는다.
+//   "data:image/webp;base64,..." 처럼 생겼고, <img src> 에 그대로 넣으면 사진이 보인다.
+//   넣기 전에 프로필 화면이 256x256 으로 줄인다 (profile.js). 보통 20~40KB.
+// ─────────────────────────────────────────────
+
+// 사진 글자의 최대 길이. DB 의 검사 조건(supabase/2026-10-24_profile_avatar.sql)과 같은 값.
+export const AVATAR_MAX_LENGTH = 200000;
+
+/**
+ * 내 프로필: 닉네임과 사진. 둘 다 아직 없으면 null.
+ * avatar 칸을 만드는 SQL 을 실행하기 전이면(칸 없음 오류 42703) 닉네임만 읽어서 사진 없이 돌려준다.
+ */
+export async function getProfile() {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("users")
+    .select("nickname, avatar")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error?.code === "42703") return { nickname: await getNickname(), avatar: null };
+  if (error) throw error;
+  return { nickname: data?.nickname || null, avatar: data?.avatar || null };
+}
+
+/** 프로필 사진을 저장한다. null 이면 사진을 지워서 기본 사진으로 돌아간다. upsert 인 이유는 saveNickname 과 같다. */
+export async function saveAvatar(avatar) {
+  if (avatar && avatar.length > AVATAR_MAX_LENGTH) {
+    throw new Error("사진이 너무 커요.");
+  }
+  const user = await requireUser();
+  const { error } = await supabase
+    .from("users")
+    .upsert(userRow(user, { avatar }));
   if (error) throw error;
 }
 

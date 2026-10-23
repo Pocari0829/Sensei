@@ -25,6 +25,7 @@ const PRECACHE = [
   "./src/pages/quiz.html",
   "./src/styles/style.css",
   "./public/mascot.png",
+  "./public/avatar-default.svg",
   "./public/haku-shadow.png",
   "./public/icon-menu.svg",
   "./public/icon-send.svg",

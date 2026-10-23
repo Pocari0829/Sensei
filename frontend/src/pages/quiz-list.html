@@ -1,64 +1,68 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>빈틈 시험지 · SENSEI</title>
-    <meta name="description" content="대화에서 찾은 빈틈으로 만든 시험지 목록." />
-    <link rel="stylesheet" href="../styles/style.css" />
-    <link rel="manifest" href="../../manifest.json" />
-    <meta name="theme-color" content="#4f46c8" />
-    <link rel="apple-touch-icon" href="../../public/icons/icon-180.png" />
-  </head>
-  <body data-page="quiz-list">
-    <div class="phone">
-      <header class="topbar">
-        <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu" aria-expanded="false">
-          <img src="../../public/icon-menu.svg" alt="" />
-        </button>
-        <h1 class="topbar__title">빈틈 시험지</h1>
-      </header>
 
-      <!-- 정렬 기준. 누르면 아래 목록 순서만 바뀐다 (quiz-list.js). 고른 기준은 이 브라우저에 기억해 둔다 -->
-      <div class="sort-tabs" role="group" aria-label="시험지 정렬 기준">
-        <button type="button" class="sort-tab" data-sort="wrong" aria-pressed="true">오답률 높은 순</button>
-        <button type="button" class="sort-tab" data-sort="made" aria-pressed="false">최근 생성 순</button>
-        <button type="button" class="sort-tab" data-sort="studied" aria-pressed="false">최근 학습 순</button>
-      </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>시험지 · SENSEI</title>
+  <meta name="description" content="대화에서 찾은 빈틈으로 만든 시험지 목록." />
+  <link rel="stylesheet" href="../styles/style.css" />
+  <link rel="manifest" href="../../manifest.json" />
+  <meta name="theme-color" content="#4f46c8" />
+  <link rel="apple-touch-icon" href="../../public/icons/icon-180.png" />
+</head>
 
-      <div class="scroll" style="padding: 0 20px 24px">
-        <!-- 시험지 목록: 문제가 있는 학습 세션마다 카드 하나. quiz-list.js 가 DB 에서 읽어 그린다.
-             카드를 누르면 그 세션의 시험지(quiz.html?session=)가 열린다. -->
-        <div id="quiz-list"></div>
+<body data-page="quiz-list">
+  <div class="phone">
+    <header class="topbar">
+      <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu"
+        aria-expanded="false">
+        <img src="../../public/icon-menu.svg" alt="" />
+      </button>
+      <h1 class="topbar__title">시험지</h1>
+    </header>
 
-        <div class="card tip">
-          <p class="tip__title">새 시험지를 받고 싶어?</p>
-          <p class="tip__text">채팅에서 하쿠에게 3번 이상 설명한 뒤 [퀴즈 풀기]를 누르면 여기에 시험지가 생겨요.</p>
-        </div>
-      </div>
+    <!-- 정렬 기준. 누르면 아래 목록 순서만 바뀐다 (quiz-list.js). 고른 기준은 이 브라우저에 기억해 둔다 -->
+    <div class="sort-tabs" role="group" aria-label="시험지 정렬 기준">
+      <button type="button" class="sort-tab" data-sort="wrong" aria-pressed="true">오답률 높은 순</button>
+      <button type="button" class="sort-tab" data-sort="made" aria-pressed="false">최근 생성 순</button>
+      <button type="button" class="sort-tab" data-sort="studied" aria-pressed="false">최근 학습 순</button>
     </div>
 
-    <!-- 삼선 메뉴(서랍). 화면 이동 메뉴 (menu.js). 모든 화면이 같은 서랍을 쓴다 -->
-    <div class="menu-overlay" id="menu-overlay"></div>
-    <nav class="menu" id="menu" aria-label="메뉴" aria-hidden="true" inert>
-      <button class="menu__close" type="button" id="btn-menu-close" aria-label="메뉴 닫기"></button>
-      <div class="menu__user">
-        <p class="menu__name" id="menu-nickname">닉네임</p>
-        <p class="menu__sub">하쿠의 선생님</p>
-      </div>
-      <ul class="menu__list">
-        <li><a class="menu__item" href="./chat.html" id="menu-chat">채팅</a></li>
-        <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat">새 대화</a></li>
-        <li><a class="menu__item" href="./history.html" id="menu-history">학습 기록</a></li>
-        <li><a class="menu__item" href="./quiz-list.html" id="menu-test" aria-current="page">빈틈 시험지</a></li>
-        <li><a class="menu__item" href="./profile.html" id="menu-profile">프로필</a></li>
-      </ul>
-      <button class="menu__logout" type="button" id="btn-logout">로그아웃</button>
-    </nav>
+    <div class="scroll" style="padding: 0 20px 24px">
+      <!-- 시험지 목록: 문제가 있는 학습 세션마다 카드 하나. quiz-list.js 가 DB 에서 읽어 그린다.
+             카드를 누르면 그 세션의 시험지(quiz.html?session=)가 열린다. -->
+      <div id="quiz-list"></div>
 
-    <script type="module" src="../scripts/guard.js"></script>
-    <script type="module" src="../scripts/menu.js"></script>
-    <script type="module" src="../scripts/quiz-list.js"></script>
-    <script type="module" src="../scripts/pwa.js"></script>
-  </body>
+      <div class="card tip">
+        <p class="tip__title">새 시험지를 받고 싶어?</p>
+        <p class="tip__text">채팅에서 하쿠에게 3번 이상 설명한 뒤 [퀴즈 풀기]를 누르면 여기에 시험지가 생겨요.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 삼선 메뉴(서랍). 화면 이동 메뉴 (menu.js). 모든 화면이 같은 서랍을 쓴다 -->
+  <div class="menu-overlay" id="menu-overlay"></div>
+  <nav class="menu" id="menu" aria-label="메뉴" aria-hidden="true" inert>
+    <button class="menu__close" type="button" id="btn-menu-close" aria-label="메뉴 닫기"></button>
+    <div class="menu__user">
+      <p class="menu__name" id="menu-nickname">닉네임</p>
+      <p class="menu__sub">하쿠의 선생님</p>
+    </div>
+    <ul class="menu__list">
+      <li><a class="menu__item" href="./chat.html" id="menu-chat">채팅</a></li>
+      <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat">새 대화</a></li>
+      <li><a class="menu__item" href="./history.html" id="menu-history">학습 기록</a></li>
+      <li><a class="menu__item" href="./quiz-list.html" id="menu-test" aria-current="page">시험지</a></li>
+      <li><a class="menu__item" href="./profile.html" id="menu-profile">프로필</a></li>
+    </ul>
+    <button class="menu__logout" type="button" id="btn-logout">로그아웃</button>
+  </nav>
+
+  <script type="module" src="../scripts/guard.js"></script>
+  <script type="module" src="../scripts/menu.js"></script>
+  <script type="module" src="../scripts/quiz-list.js"></script>
+  <script type="module" src="../scripts/pwa.js"></script>
+</body>
+
 </html>

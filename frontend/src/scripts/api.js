@@ -96,3 +96,16 @@ export function checkSystem(message, history = []) {
 export function generateQuiz(history = [], previous = []) {
   return postJson("/generate-quiz", { history, previous });
 }
+
+/**
+ * 방금 한 설명이 어느 학교급 학생이 할 만한 설명인지 판단받는다.
+ * 레벨: 1 초등 저학년 / 2 초등 고학년 / 3 중학생 / 4 고등학생 / 5 대학생 이상
+ *
+ * @param {string} message - 사용자가 방금 한 말.
+ * @param {string} question - 그 바로 전에 하쿠가 한 말. 무엇에 대한 대답인지 알려준다. 없으면 빈 문자열.
+ * @returns {Promise<{ok: true, is_explanation: boolean, level: number, reason: string} | {ok: false, error: string}>}
+ *   is_explanation 이 false(질문, "모르겠어", "무슨 색이야?" 에 "초록색" 같은 한 단어 답)면 level 은 쓰지 않는다.
+ */
+export function judgeLevel(message, question = "") {
+  return postJson("/judge-level", { message, question });
+}

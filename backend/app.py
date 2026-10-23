@@ -1,16 +1,17 @@
 """Sensei 백엔드 (Flask + Gemini).
 
-주소는 3개다.
+주소는 4개다.
     POST /ask-haku       사용자의 설명 → 하쿠의 꼬리질문 (정오 판별을 먼저 거친다)
     POST /check-system   정오 판별만 따로
     POST /generate-quiz  지금까지의 대화 → 문제 1개 (빈칸 또는 객관식)
+    POST /judge-level    사용자의 대답 하나 → 어느 학교급 수준의 설명인지 (레벨 1~5)
 
 /ask-haku 로 메시지가 오면 아래 순서로 지나간다. 이 파일도 같은 순서로 적혀 있다.
     1) check_before_haku()    정오 판별. 틀렸으면 여기서 "틀렸어요. ..." 로 바로 응답하고 끝난다.
     2) ask_haku()             맞았을 때만 실행된다. 하쿠가 꼬리질문을 한다.
     3) replace_quota_error()  Gemini 사용량 초과였다면 긴 영어 오류를 짧은 안내 문구로 바꾼다.
 
-하쿠 / 정오 판별 / 문제 생성은 서로 다른 Gemini 호출이고, 각자의 프롬프트는 prompts.py 에 있다.
+하쿠 / 정오 판별 / 문제 생성 / 수준 판단은 서로 다른 Gemini 호출이고, 각자의 프롬프트는 prompts.py 에 있다.
 """
 
 import json
@@ -50,8 +51,12 @@ CHECK_MODEL = os.getenv("CHECK_MODEL", "gemini-3-flash-preview")
 QUIZ_MODEL = os.getenv("QUIZ_MODEL", CHECK_MODEL)
 # 문제 유형(빈칸 주관식 / 객관식) 고르기 전용 모델. 문제를 만드는 QUIZ_MODEL 보다 먼저 한 번 부른다.
 QUIZ_TYPE_MODEL = os.getenv("QUIZ_TYPE_MODEL", "gemini-3.1-flash-lite")
+# 대답 수준 판단 전용 모델. 메시지마다 불리고, 하쿠의 대답과 따로(기다리지 않고) 돈다.
+# 판단 결과는 채팅 화면이 저장하므로, 화면을 옮기기 전에 끝나야 기록된다. 그래서 빠른 모델을 쓴다.
+# (3.1-flash-lite 는 하루 한도를 따로 쓰지만 가끔 1분 넘게 걸려서, 그사이 화면을 옮기면 기록이 사라졌다)
+LEVEL_MODEL = os.getenv("LEVEL_MODEL", "gemini-3.5-flash-lite")
 # 정리:  HAKU_MODEL = 하쿠 꼬리질문 / CHECK_MODEL = 정오 판별 / QUIZ_MODEL = 문제 생성
-#        QUIZ_TYPE_MODEL = 문제 유형 고르기
+#        QUIZ_TYPE_MODEL = 문제 유형 고르기 / LEVEL_MODEL = 대답 수준 판단
 # 무료 사용량은 모델마다 따로 계산되므로, 서로 다른 모델로 두면 하루에 더 많이 쓸 수 있다.
 
 
@@ -104,6 +109,20 @@ class QuizTypeResult(BaseModel):
     type: Literal["blank", "choice"] = Field(
         description="다음 문제의 유형. blank = 빈칸 주관식 (빈칸에 들어갈 말을 직접 쓴다), "
         "choice = 객관식 (보기 중 정답 하나를 고른다)."
+    )
+
+
+# 대답 수준 판단 결과 (judge_level 이 LEVEL_MODEL 에게 받는다)
+# 레벨은 users 의 레벨과 같은 단계: 1 초등 저학년 / 2 초등 고학년 / 3 중학생 / 4 고등학생 / 5 대학생 이상
+# 유형 고르기와 같은 이유로 근거(reason)를 먼저 쓰게 한다.
+class LevelResult(BaseModel):
+    reason: str = Field(description="이 수준으로 판단한 근거. 대답에 쓴 용어와 설명의 깊이를 근거로 짧은 한 문장.")
+    is_explanation: bool = Field(
+        description="설명이면 짧아도 true. 질문, 모르겠다는 말, 힌트 요청, 인사, 맞장구처럼 설명이 아니거나, "
+        "색·이름·숫자처럼 한 단어로 답하는 질문에 그 답만 한 경우라 수준을 알 수 없으면 false."
+    )
+    level: int = Field(
+        description="1 초등학교 저학년, 2 초등학교 고학년, 3 중학생, 4 고등학생, 5 대학생 이상. 1~5 중 하나."
     )
 
 
@@ -528,6 +547,53 @@ def generate_quiz():
         return jsonify(ok=False, error=f"문제를 만들지 못했어요: {e} 새로고침하면 다시 만들어요."), 500
 
     return jsonify(ok=True, items=[quiz_item])
+
+
+# 레벨의 범위. 프론트(user.js)의 LEVEL_MIN / LEVEL_MAX 와 같은 값.
+LEVEL_MIN, LEVEL_MAX = 1, 5
+
+
+@app.post("/judge-level")
+def judge_level():
+    """사용자의 대답 하나가 어느 학교급 학생이 할 만한 설명인지 판단한다. (레벨 1~5)
+
+    채팅에서 사용자가 메시지를 보낼 때마다 chat.js 가 하쿠의 대답과 따로 부른다. (하쿠는 이 결과를 기다리지 않는다)
+    받는 것:     {message, question?}  (question = 이 대답 바로 전에 하쿠가 한 말. 무엇에 대한 대답인지 알려준다)
+    돌려주는 것: {ok: true, is_explanation: true | false, level: 1~5, reason: "..."}
+        is_explanation 이 false(질문, "모르겠어" 같은 말, "무슨 색이야?" 에 "초록색이야" 처럼 한 단어 답)면 level 은 쓰지 않는다.
+    판단한 레벨을 DB 에 기록하고 사용자의 레벨을 움직이는 것은 프론트(store.js / user.js)가 한다.
+    """
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    question = str(data.get("question") or "").strip()
+
+    if not message:
+        return jsonify(ok=False, error="message 가 비어 있습니다."), 400
+
+    # 대화 전체가 아니라 하쿠의 마지막 질문과 이번 대답만 보낸다. 판단할 대답이 무엇인지 헷갈리지 않게.
+    text = f"하쿠의 질문: {question}\n사용자의 대답: {message}" if question else f"사용자의 설명: {message}"
+
+    try:
+        res = _generate_with_retry(
+            attempts=2,
+            model=LEVEL_MODEL,
+            contents=[types.Content(role="user", parts=[types.Part(text=text)])],
+            config=types.GenerateContentConfig(
+                system_instruction=prompts.JUDGE_LEVEL,  # prompts.py 의 대답 수준 판단 프롬프트
+                response_mime_type="application/json",
+                response_schema=LevelResult,
+            ),
+        )
+        result = _parse(res, LevelResult)
+    except Exception as e:
+        app.logger.warning("대답 수준을 판단하지 못함: %s", e)
+        return jsonify(ok=False, error=f"대답 수준을 판단하지 못했어요: {e}"), 500
+
+    # Gemini 가 범위 밖의 숫자를 줘도 1~5 안으로 맞춘다.
+    level = min(max(result.level, LEVEL_MIN), LEVEL_MAX)
+    app.logger.info("대답 수준: %d (%s)", level, result.reason)
+    return jsonify(ok=True, is_explanation=result.is_explanation, level=level, reason=result.reason)
+
 
 if __name__ == "__main__":
     # debug=True 면 파일 저장 시 서버가 자동 재시작된다. 개발 중에만 켤 것.

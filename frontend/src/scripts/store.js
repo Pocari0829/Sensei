@@ -9,8 +9,9 @@
 //   quiz_items          퀴즈 문제 하나 (세션별, 만든 순서대로) + 사용자가 쓴 답
 //   system_corrections  정오 판별에서 "틀렸어요" 가 나온 설명과 피드백
 //   gap_records         모르는 개념(= 세션 주제)별로 틀린 횟수 / "더 쉽게" 누른 횟수
+//   answer_levels       설명마다 어느 학교급 수준인지 판단한 결과 (레벨 1~5 + 근거)
 //
-// 닉네임(users 테이블)은 user.js 가 다룬다.
+// 닉네임과 수준(users 테이블)은 user.js 가 다룬다.
 // ─────────────────────────────────────────────
 
 import { supabase } from "./supabase.js";
@@ -267,4 +268,20 @@ export async function recordGap(concept, kind) {
     last_seen: today(),
   });
   if (insertError) throw insertError;
+}
+
+// ─────────────────────────────────────────────
+// 대답 수준 (answer_levels: 설명 하나가 한 행)
+// ─────────────────────────────────────────────
+
+/**
+ * 설명 하나의 수준을 기록한다. 백엔드(/judge-level)가 판단한 레벨(1~5)과 그 근거(reason).
+ * 내 지금 수준(users.level_current)을 움직이는 것은 user.js 의 applyAnswerLevel 이 한다.
+ */
+export async function addAnswerLevel(sessionId, answer, level, reason) {
+  const user = await requireUser();
+  const { error } = await supabase
+    .from("answer_levels")
+    .insert({ user_id: user.id, session_id: sessionId, answer, level, reason });
+  if (error) throw error;
 }

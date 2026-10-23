@@ -8,8 +8,8 @@
 // ─────────────────────────────────────────────
 
 import * as store from "./store.js";
-import { askHaku } from "./api.js";
-import { getNickname, lowerLevel } from "./user.js";
+import { askHaku, judgeLevel } from "./api.js";
+import { applyAnswerLevel, getNickname, lowerLevel } from "./user.js";
 import { NICKNAME_PAGE } from "./auth.js";
 
 const phoneEl = document.querySelector(".phone");
@@ -186,7 +186,11 @@ function typeLastSenseiBubble() {
   }, TYPING_SPEED);
 }
 
-async function sendMessage(rawText) {
+/**
+ * 메시지를 보낸다.
+ * skipLevel: 버튼이 보내는 정해진 말("더 쉽게", "모르겠어")처럼 사용자의 설명이 아니면 true. 수준 판단을 하지 않는다.
+ */
+async function sendMessage(rawText, { skipLevel = false } = {}) {
   const text = rawText.trim();
   if (!text || isSending) return;
 
@@ -229,6 +233,11 @@ async function sendMessage(rawText) {
     return;
   }
   render();
+
+  // 방금 한 설명이 어느 수준인지도 판단받는다. 하쿠의 대답과 따로 돌고, 기다리지 않는다.
+  if (!skipLevel) {
+    recordAnswerLevel(session, text, lastHakuText(historyBeforeThisTurn));
+  }
 
   messageList.insertAdjacentHTML("beforeend", typingRow());
   messageList.scrollTop = messageList.scrollHeight;
@@ -283,6 +292,28 @@ function recordWrongAnswer(session, text, feedback) {
       .recordGap(session.topic, "wrong")
       .catch((err) => console.warn("모르는 개념을 저장하지 못했어요:", err));
   }
+}
+
+/** 대화에서 하쿠가 마지막으로 한 말. 설명의 수준을 판단할 때 무엇에 대한 대답인지 같이 보낸다. 없으면 빈 문자열. */
+function lastHakuText(messages) {
+  return messages.findLast((m) => m.role === "sensei")?.text ?? "";
+}
+
+/**
+ * 방금 한 설명이 어느 학교급 수준(레벨 1~5)인지 백엔드(/judge-level)에 판단받아서
+ * answer_levels 에 기록하고, 내 수준(users.level_score / level_current)을 그쪽으로 조금 움직인다.
+ * 질문, "모르겠어", 한 단어로 답하는 질문의 답("무슨 색이야?" → "초록색")은 백엔드가 설명이 아니라고 알려주므로 기록하지 않는다.
+ * 실패해도 대화는 계속한다. (화면에는 영향 없음)
+ */
+function recordAnswerLevel(session, text, question) {
+  judgeLevel(text, question)
+    .then(async (result) => {
+      if (!result.ok) throw new Error(result.error);
+      if (!result.is_explanation) return;
+      await store.addAnswerLevel(session.id, text, result.level, result.reason);
+      await applyAnswerLevel(result.level);
+    })
+    .catch((err) => console.warn("설명의 수준을 기록하지 못했어요:", err));
 }
 
 composerForm.addEventListener("submit", (e) => {
@@ -353,9 +384,9 @@ easierBtn.addEventListener("click", () => {
   }
   // 내 수준(users.level_current)도 한 단계 내린다. 저장을 기다리지 않고 바로 하쿠에게 보낸다.
   lowerLevel().catch((err) => console.warn("수준을 낮추지 못했어요:", err));
-  sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?");
+  sendMessage("방금 질문을 더 쉽게 다시 물어봐줄래?", { skipLevel: true });
 });
-dontKnowBtn.addEventListener("click", () => sendMessage("음... 모르겠어. 힌트를 줄 수 있어?"));
+dontKnowBtn.addEventListener("click", () => sendMessage("음... 모르겠어. 힌트를 줄 수 있어?", { skipLevel: true }));
 
 quizBtn.addEventListener("click", () => {
   if (!activeSession) return;

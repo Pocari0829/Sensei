@@ -113,8 +113,9 @@ class QuizTypeResult(BaseModel):
 def _history_to_contents(history):
     """프론트가 보낸 대화 기록을 Gemini 의 Content 리스트로 바꾼다.
 
-    history 는 [{role: "user" | "sensei", text: "..."}, ...] 형태.
-    role 이 "sensei" 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
+    history 는 [{role: "user" | "sensei" | "check", text: "..."}, ...] 형태.
+    role 이 "sensei"(하쿠) 나 "check"(정오 판별의 "틀렸어요. ..." 알림) 면 Gemini 기준으로는 모델(model)이 한 말이 된다.
+    "check" 를 사용자 말로 넘기면 Gemini 가 "사용자가 틀렸다고 말했다" 로 읽으므로, 지적한 쪽(모델)의 말로 넘긴다.
     형식이 이상한 항목은 조용히 건너뛴다 (프론트 버그 때문에 500 나면 안 되니까).
     """
     contents = []
@@ -129,7 +130,7 @@ def _history_to_contents(history):
         if not text or not str(text).strip():
             continue
 
-        role = "model" if turn.get("role") == "sensei" else "user"
+        role = "model" if turn.get("role") in ("sensei", "check") else "user"
         contents.append(types.Content(role=role, parts=[types.Part(text=str(text))]))
 
     return contents
@@ -200,8 +201,9 @@ def _check(message, history):
 def check_before_haku():
     """/ask-haku 가 실행되기 "전에" 정오 판별을 먼저 한다.
 
-    - 틀렸으면: 하쿠 모델을 부르지 않고 여기서 바로 응답을 돌려준다.
-      ok=True + question="틀렸어요. ..." 라서, 프론트(chat.js)는 기존 코드 그대로 하쿠 말풍선으로 띄운다.
+    - 틀렸으면: 하쿠 모델을 부르지 않고(틀린 설명에는 꼬리질문을 하지 않는다) 여기서 바로 응답을 돌려준다.
+      프론트(chat.js)는 is_correct=False 를 보고 하쿠 말풍선 대신 "틀렸어요." 알림 박스만 띄운다.
+      어디가 틀렸는지(feedback)는 화면에 보여주지 않고 system_corrections 기록에 남긴다.
     - 맞았으면: None 을 돌려줘서 원래의 ask_haku() (SYSTEM_PROMPT) 가 그대로 실행된다.
     - 판별 자체가 실패하면(사용량 초과 등): ok=False 로 돌려줘서 "시스템 알림" 박스에 뜬다.
     """
@@ -227,8 +229,8 @@ def check_before_haku():
     if result.is_correct:
         return None
 
-    # 틀렸으면 하쿠의 말풍선으로 "틀렸다" 고 그대로 말한다.
-    # ok=True + question 이라서 chat.js 는 평소 하쿠 대답과 똑같이 그리고, 대화 기록에도 남는다.
+    # 틀렸으면 판별 결과를 돌려준다. 하쿠는 부르지 않는다.
+    # chat.js 는 "틀렸어요." 알림 박스만 보여주고(대화 기록 haku_log 에는 role "check"), feedback 은 system_corrections 에 남긴다.
     feedback = result.feedback or "방금 설명에 틀린 부분이 있어요."
     return jsonify(
         ok=True,

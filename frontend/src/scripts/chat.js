@@ -83,6 +83,18 @@ function systemAlert(text) {
     </div>`;
 }
 
+// 정오 판별에서 틀렸을 때 보여주는 말. 어디가 틀렸는지 설명은 화면에 보여주지 않고
+// (사용자가 스스로 다시 생각하게) system_corrections 기록에만 남긴다.
+const WRONG_TEXT = "틀렸어요.";
+
+/** 정오 판별에서 틀렸을 때의 "틀렸어요." 알림 박스. 하쿠의 말이 아니라서 말풍선과 따로 그린다. */
+function checkAlert() {
+  return `
+    <div class="system system--wrong" aria-label="정오 판별">
+      <p class="system__text">${WRONG_TEXT}</p>
+    </div>`;
+}
+
 /** 말풍선 목록 맨 아래에 "시스템 알림" 을 붙인다. 아직 대화가 없는 빈 화면이어도 보이게 한다. */
 function showAlert(text) {
   emptyState.hidden = true;
@@ -120,7 +132,13 @@ function render() {
   if (inSession) topicNameEl.textContent = activeSession.topic || "학습 중";
   messageList.innerHTML =
     `<p class="day-divider">오늘</p>` +
-    shown.map((m) => (m.role === "user" ? bubbleRowUser(m.text) : bubbleRowSensei(m.text))).join("");
+    shown
+      .map((m) => {
+        if (m.role === "user") return bubbleRowUser(m.text);
+        if (m.role === "check") return checkAlert();
+        return bubbleRowSensei(m.text);
+      })
+      .join("");
   messageList.scrollTop = messageList.scrollHeight;
 }
 
@@ -234,23 +252,27 @@ async function sendMessage(rawText) {
   document.getElementById("typing-row")?.remove();
 
   if (result.ok) {
+    // 정오 판별에서 틀렸으면 하쿠는 대답하지 않는다(꼬리질문 없음).
+    // 하쿠 말풍선 대신 "틀렸어요." 알림 박스만 보여주고, 대화 기록에는 role "check" 로 남긴다.
+    // (기록에 남겨야 다음 질문과 퀴즈를 만들 때 Gemini 가 이 설명이 틀렸다는 걸 안다)
+    const isWrong = result.is_correct === false;
     let saveError = null;
     try {
-      await store.addMessage(session, "sensei", result.question);
+      await store.addMessage(session, isWrong ? "check" : "sensei", isWrong ? WRONG_TEXT : result.question);
     } catch (err) {
       saveError = err;
     }
 
     if (session === activeSession) {
       render();
-      typeLastSenseiBubble();
+      if (!isWrong) typeLastSenseiBubble();
       if (saveError) {
-        showAlert(`하쿠의 대답을 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${saveError.message})`);
+        showAlert(`방금 대답을 저장하지 못했어요. 다음 메시지를 보낼 때 같이 저장돼요. (${saveError.message})`);
       }
     }
 
-    // 정오 판별에서 틀렸으면 기록해 둔다. (화면에는 영향 없음)
-    if (result.is_correct === false) {
+    // 틀린 설명과 모르는 개념도 따로 기록해 둔다. (화면에는 영향 없음)
+    if (isWrong) {
       recordWrongAnswer(session, text, result.feedback);
     }
   } else {

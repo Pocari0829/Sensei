@@ -5,6 +5,7 @@
 //
 //   테이블              들어가는 것
 //   sessions            학습 세션 하나. 대화는 haku_log 에 [{role, text, ts}] 배열로 통째로 저장
+//                       role: "user"(나) / "sensei"(하쿠) / "check"(정오 판별의 "틀렸어요." 알림)
 //   quiz_items          퀴즈 문제 하나 (세션별, 만든 순서대로) + 사용자가 쓴 답
 //   system_corrections  정오 판별에서 "틀렸어요" 가 나온 설명과 피드백
 //   gap_records         모르는 개념(= 세션 주제)별로 틀린 횟수 / "더 쉽게" 누른 횟수

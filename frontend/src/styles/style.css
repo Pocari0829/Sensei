@@ -263,6 +263,15 @@ body[data-page="chat"] #message-list {
   line-height: 1.5;
   color: var(--primary);
 }
+/* 정오 판별 알림: 틀린 설명에 붙는 "틀렸어요." 박스. 하쿠 말풍선, 시스템 알림(보라)과 구분되게 빨간색 */
+.system--wrong {
+  border-left-color: #e5484d;
+  background: #fdecec;
+}
+.system--wrong .system__title,
+.system--wrong .system__text {
+  color: #c8363b;
+}
 .day-divider {
   margin-bottom: 10px;
   text-align: center;

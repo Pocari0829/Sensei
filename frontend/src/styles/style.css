@@ -217,6 +217,12 @@ body[data-page="chat"] #message-list {
   font-weight: 700;
   line-height: 1.4;
 }
+/* 캐릭터 화면의 말풍선 하나(#stage-bubble)는 인사말이든 하쿠의 대답이든 같은 굵기로 보이게 한다.
+   (chat.js 가 대화 중에는 bubble--greeting 을 떼고 bubble--tint / bubble--wrong 으로 바꾸는데,
+   그러면 굵기가 기본값 400 으로 돌아가서 인사말과 다른 글꼴처럼 보였다) */
+#stage-bubble {
+  font-weight: 700;
+}
 /* 캐릭터 화면(#stage-bubble)에서 정오 판별이 틀렸을 때 보여주는 말풍선. .system--wrong 과 같은 빨간 톤 */
 .bubble--wrong {
   border-bottom-left-radius: 6px;

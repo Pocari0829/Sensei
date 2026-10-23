@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────
 // 로그인 / 로그아웃 / 로그인 확인.
 //
+// - 이메일: 이메일과 비밀번호로 가입하고 로그인한다. 비밀번호는 Supabase 가 암호화해서 auth.users 에 보관한다.
+//          (우리 DB 의 users 테이블에는 비밀번호를 저장하지 않는다)
 // - Google: 로그인 버튼(login.js)이 Google 에서 받은 "ID 토큰"을 Supabase 에 넘긴다.
 // - 카카오: 이 탭이 카카오 로그인 화면으로 이동했다가, 로그인이 끝나면 Supabase 를 거쳐 돌아온다.
 // 어느 쪽이든 Supabase 가 그 사람의 계정(auth.users)을 만들거나 찾아서 로그인시켜 준다.
@@ -42,6 +44,54 @@ export async function signInWithGoogleToken(idToken, nonce) {
     nonce,
   });
   if (error) throw error;
+}
+
+// 비밀번호 최소 길이. Supabase 의 기본값(6)과 같다.
+export const PASSWORD_MIN = 6;
+
+// Google / 카카오로 가입한 계정은 비밀번호가 없어서 이메일 로그인이 안 된다.
+// 어느 방법으로 가입했는지는 Supabase 가 (보안상) 알려주지 않으므로, 헷갈릴 만한 오류에는 이 안내를 덧붙인다.
+const SOCIAL_HINT = "Google이나 카카오로 가입했다면 아래 버튼으로 로그인해 주세요.";
+
+/** Supabase 의 영어 오류를 화면에 보여줄 한국어로 바꾼다. 모르는 오류는 원래 문구를 붙여서 보여준다. */
+function emailAuthError(error) {
+  const messages = {
+    invalid_credentials: `이메일 또는 비밀번호가 맞지 않아요. ${SOCIAL_HINT}`,
+    email_not_confirmed: "아직 메일 인증을 하지 않았어요. 가입할 때 받은 메일의 링크를 먼저 눌러 주세요.",
+    user_already_exists: `이미 가입된 이메일이에요. 로그인해 주세요. ${SOCIAL_HINT}`,
+    email_exists: `이미 가입된 이메일이에요. 로그인해 주세요. ${SOCIAL_HINT}`,
+    weak_password: `비밀번호가 너무 쉬워요. ${PASSWORD_MIN}자 이상으로 정해 주세요.`,
+    validation_failed: "이메일 형식이 올바르지 않아요.",
+    email_address_invalid: "쓸 수 없는 이메일 주소예요.",
+    over_email_send_rate_limit: "인증 메일을 너무 자주 보냈어요. 잠시 후 다시 시도해 주세요.",
+    over_request_rate_limit: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요.",
+    signup_disabled: "지금은 이메일 가입을 받지 않고 있어요.",
+  };
+  return new Error(messages[error.code] ?? `문제가 생겼어요: ${error.message}`);
+}
+
+/**
+ * 이메일과 비밀번호로 가입한다.
+ * Supabase 에서 메일 인증을 켜 두었으면 인증 메일이 가고, 메일의 링크를 누르면 로그인 화면으로 돌아와 로그인된다.
+ * @returns {Promise<{needsConfirm: boolean}>} needsConfirm 이 true 면 아직 로그인 전이다. (메일 인증을 기다린다)
+ */
+export async function signUpWithEmail(email, password) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: new URL(LOGIN_PAGE, window.location.href).href },
+  });
+  if (error) throw emailAuthError(error);
+  // 메일 인증을 켜 두면, 이미 가입된 이메일이어도 Supabase 가 오류 대신 빈 계정을 돌려준다. (가입 여부를 숨기려고)
+  // identities 가 비어 있으면 이미 가입된 이메일이다.
+  if (data.user && data.user.identities?.length === 0) throw emailAuthError({ code: "user_already_exists" });
+  return { needsConfirm: !data.session };
+}
+
+/** 이메일과 비밀번호로 로그인한다. */
+export async function signInWithEmail(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw emailAuthError(error);
 }
 
 /** Supabase 에서 해당 로그인 방식(예: "kakao")이 켜져 있는지. */

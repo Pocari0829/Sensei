@@ -91,6 +91,10 @@ LEVEL_MODEL = os.getenv("LEVEL_MODEL", "gemini-3.5-flash-lite")
 # ─────────────────────────────────────────────
 # 정오 판별 결과
 class CheckResult(BaseModel):
+    is_off_topic: bool = Field(
+        description="학습과 전혀 상관없는 장난, 욕, 의미 없는 말(예: '히히 똥', 'ㅋㅋㅋㅋ', 'asdf')이면 true. "
+        "인사, 질문, '모르겠어', 힌트 요청, 학습 내용에 대한 느낌·비유·경험은 false."
+    )
     is_correct: bool = Field(
         description="사용자의 설명에 사실과 다른 내용이 있으면 false. "
         "틀린 내용이 없거나, 질문·모르겠다는 말·힌트 요청처럼 사실을 설명하는 말이 아니거나, "
@@ -316,6 +320,10 @@ def _called_recently(history, nickname):
     return any(name in text for text in haku_texts[-NICKNAME_COOLDOWN:] for name in names)
 
 
+# 학습과 상관없는 말(예: "히히 똥")을 했을 때 하쿠 대신 보여주는 경고.
+OFF_TOPIC_MESSAGE = "학습과 관련 없는 말은 하쿠가 배울 수 없어요. 오늘 공부한 내용을 하쿠에게 설명해 주세요."
+
+
 # 정오 판별을 하쿠와 동시에 돌리기 위한 일꾼. 요청마다 만들지 않고 서버가 켜질 때 한 번만 만든다.
 _check_executor = ThreadPoolExecutor(max_workers=8)
 
@@ -385,6 +393,10 @@ def ask_haku():
         app.logger.warning("정오 판별 실패: %s", e)
         busy = "정오 판별 서버가 지금 바빠요. 잠시 후 다시 보내주세요."
         return jsonify(ok=False, error=QUOTA_MESSAGE if _is_quota_error(e) else busy)
+
+    # 학습과 상관없는 말이면 하쿠의 대답은 버리고 경고만 보낸다. (chat.js 가 시스템 알림으로 띄운다)
+    if check.is_off_topic:
+        return jsonify(ok=True, off_topic=True, warning=OFF_TOPIC_MESSAGE)
 
     # 정오 판별 결과는 하쿠의 말과 따로 보낸다.
     # 틀렸으면 chat.js 가 feedback 을 하쿠 말풍선이 아니라 "시스템 알림" 박스로 띄운다.

@@ -55,6 +55,24 @@ function toSession(row) {
   };
 }
 
+// 학습과 상관없는 말(예: "히히 똥")에 붙는 경고. haku_log 에 {role: "system", kind: OFF_TOPIC, text} 로 저장된다.
+export const OFF_TOPIC = "off-topic";
+
+/** 경고가 붙은 사용자 말인지. (바로 다음 메시지가 학습과 상관없다는 경고) */
+export function isOffTopicAt(messages, i) {
+  return messages[i]?.role === "user" && messages[i + 1]?.kind === OFF_TOPIC;
+}
+
+/**
+ * Gemini(하쿠 / 문제 생성)에게 보낼 대화 기록 [{role, text}].
+ * 학습과 상관없는 말과 그 경고는 뺀다. (하쿠가 "똥이 뭐야?" 라고 묻거나, 그걸로 문제를 내지 않게)
+ */
+export function messagesForAI(messages) {
+  return messages
+    .filter((m, i) => m.kind !== OFF_TOPIC && !isOffTopicAt(messages, i))
+    .map((m) => ({ role: m.role, text: m.text }));
+}
+
 /** 문장이 너무 길면 세션 목록/헤더에 쓸 짧은 주제 이름으로 잘라준다. */
 const TOPIC_MAX_LENGTH = 10;
 
@@ -132,6 +150,19 @@ export async function saveSession(session) {
   if (error) throw error;
   session.updatedAt = Date.parse(data.updated_at);
   return session;
+}
+
+/** 세션의 주제 이름만 바꾼다. (기록 화면의 연필 버튼) 대화(haku_log)는 건드리지 않는다. */
+export async function renameSession(id, topic) {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("sessions")
+    .update({ topic })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id");
+  if (error) throw error;
+  if (data.length === 0) throw new Error("이미 삭제됐거나 내 기록이 아니에요.");
 }
 
 /**
@@ -278,6 +309,31 @@ export async function getQuiz(sessionId) {
     userAnswers: data.map((row) => row.user_answer ?? ""),
     messageCount: Math.max(0, ...data.map((row) => row.message_count ?? 0)),
   };
+}
+
+/**
+ * 시험지 목록 화면(quiz-list.html)에 쓸 세션별 요약. 문제가 하나라도 있는 세션만 준다.
+ * 돌려주는 것: Map<세션 id, {total, graded, correct, lastMadeAt}>  (lastMadeAt = 마지막으로 문제를 만든 시각, ms)
+ */
+export async function getQuizSummaries(sessionIds) {
+  const summaries = new Map();
+  if (sessionIds.length === 0) return summaries;
+
+  const { data, error } = await supabase
+    .from("quiz_items")
+    .select("session_id, is_correct, created_at")
+    .in("session_id", sessionIds);
+  if (error) throw error;
+
+  for (const row of data) {
+    const s = summaries.get(row.session_id) ?? { total: 0, graded: 0, correct: 0, lastMadeAt: 0 };
+    s.total += 1;
+    if (row.is_correct !== null && row.is_correct !== undefined) s.graded += 1;
+    if (row.is_correct === true) s.correct += 1;
+    s.lastMadeAt = Math.max(s.lastMadeAt, Date.parse(row.created_at));
+    summaries.set(row.session_id, s);
+  }
+  return summaries;
 }
 
 /** 새로 만든 문제들을 저장하고, 저장된 문제(id 포함)를 돌려준다. messageCount = 문제를 만들 때의 대화 메시지 수. */

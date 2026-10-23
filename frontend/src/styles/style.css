@@ -115,6 +115,26 @@ body[data-page="chat"] #message-list {
   scrollbar-color: rgba(0, 117, 229, 0.25) transparent;
 }
 
+/* 학습 기록 / 빈틈 시험지: 채팅 화면처럼 셸을 화면 높이에 맞추고, 카드 목록(.scroll)만 스크롤한다.
+   그래야 스크롤바가 브라우저 창 끝이 아니라 목록 바로 옆(폰 화면 안)에 보여서, 끌어서 옛날 항목까지 빨리 내려갈 수 있다.
+   스크롤바는 기본 회색 대신 화면 톤에 맞춘 얇은 파란색. 항목이 적어서 넘치지 않으면 보이지 않는다. */
+body[data-page="history"],
+body[data-page="quiz-list"] {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+body[data-page="history"] .phone,
+body[data-page="quiz-list"] .phone {
+  min-height: 0;
+}
+body[data-page="history"] .scroll,
+body[data-page="quiz-list"] .scroll {
+  contain: size;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 117, 229, 0.45) transparent;
+  scrollbar-gutter: stable;
+}
+
 /* 상태바 */
 .statusbar {
   display: flex;
@@ -266,6 +286,14 @@ body[data-page="chat"] #message-list {
   font-weight: 700;
   line-height: 1.4;
 }
+/* 저장 실패 등 시스템 알림 배너. 캐릭터 화면/대화 목록 어느 쪽을 보고 있어도 같은 자리(입력창 바로 위)에 뜬다 */
+.alert-banner {
+  flex-shrink: 0;
+  padding: 0 16px 6px;
+}
+.alert-banner .system {
+  margin-bottom: 0;
+}
 .system {
   margin-bottom: 10px;
   padding: 8px 12px;
@@ -347,6 +375,20 @@ body[data-page="chat"] #message-list {
 .send img {
   width: 18px;
   height: 18px;
+}
+/* 하쿠가 대답을 만드는 중: 보내기 화살표 대신 흰 네모(멈추기) */
+.send__stop {
+  display: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: currentColor;
+}
+.send.is-stop img {
+  display: none;
+}
+.send.is-stop .send__stop {
+  display: block;
 }
 
 /* 버튼 */
@@ -474,6 +516,43 @@ body[data-page="chat"] #message-list {
 .login-primary:active {
   opacity: 0.85;
 }
+.login-primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* 이메일 로그인 / 회원가입 입력칸 (login.js) */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+}
+.login-form .login-primary {
+  margin-top: 6px;
+}
+.login-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.login-info {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--primary);
+}
 
 .login-social {
   margin-top: 32px;
@@ -508,19 +587,6 @@ body[data-page="chat"] #message-list {
   margin-top: 31px;
   padding-left: 3px;
   transition: transform 0.3s ease;
-}
-/* 위 "로그인" 버튼을 누르면 잠깐 커졌다 돌아오며 시선을 끈다 */
-.login-social.is-highlight .login-social__row {
-  animation: login-social-pulse 0.6s ease;
-}
-@keyframes login-social-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
 }
 
 /* 소셜 로그인 아이콘 버튼 50x50. 카카오는 아이콘 SVG 안에 노란 원이 이미 포함돼 있다 */
@@ -581,6 +647,12 @@ body[data-page="chat"] #message-list {
   padding-right: 6px;
 }
 .login-fineprint__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   margin-left: 8px;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -756,15 +828,20 @@ body[data-page="chat"] #message-list {
 }
 .chat-greeting {
   width: 272px;
-  height: 49px;
+  /* 인사말이 길면 두 줄까지 늘어나도록 높이는 최소값만 정한다 */
+  min-height: 49px;
   display: grid;
   place-items: center;
-  padding-bottom: 7px;
+  padding: 8px 16px 15px;
+  text-align: center;
+  line-height: 1.4;
   border-radius: 10px;
   background: var(--card);
   box-shadow: var(--shadow-soft);
-  font-weight: 600;
-  font-size: 14px;
+  /* 캐릭터 화면 말풍선 글꼴: 본문 글꼴(Pretendard) 굵게(700). 인사말과 하쿠의 대답 모두 이 칸을 쓴다 */
+  font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 16px;
 }
 .chat-mascot {
   position: relative;
@@ -789,81 +866,145 @@ body[data-page="chat"] #message-list {
   object-fit: cover;
 }
 
+/* 대화 화면 — 손잡이를 드래그하거나 탭하면 캐릭터 화면 ↔ 전체 대화 목록이 바뀐다 (chat.js).
+   하쿠 화면에서는 하쿠 바로 아래(빠른 버튼 위)에, 목록에서는 목록 맨 위에 붙는다.
+   위쪽 화살표 + 손잡이 막대 + 파란 글씨로 "끌어올리는 곳"임을 바로 알 수 있게 하고,
+   화면 가로 전체 × 세로 약 50px 를 잡을 수 있는 영역으로 둔다. */
 .drag-hint {
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 4px 0 2px;
+  gap: 3px;
+  padding: 6px 0 10px;
+  color: var(--primary);
+  cursor: grab;
+  /* 세로 드래그 제스처를 브라우저가 화면 스크롤/당겨서 새로고침으로 가로채지 않게 한다 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.drag-hint:active {
+  cursor: grabbing;
+}
+.drag-hint:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: 14px;
+}
+.drag-hint__arrow {
+  width: 18px;
+  height: 18px;
+  /* 손잡이가 나타날 때 화살표가 위로 세 번 톡톡 튀어서 "위로 올리라"는 걸 알려준다 */
+  animation: drag-hint-nudge 1.2s ease-in-out 0.4s 3;
 }
 .drag-hint__bar {
-  width: 36px;
-  height: 4px;
+  width: 44px;
+  height: 5px;
   border-radius: 999px;
-  background: var(--border);
+  background: rgba(0, 117, 229, 0.22);
+  transition: background-color 0.15s ease;
+}
+.drag-hint:active .drag-hint__bar {
+  background: var(--primary);
 }
 .drag-hint p {
-  font-size: 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+/* 목록 화면: 목록 맨 위에서 아래로 내리는 손잡이. 화살표를 뒤집고 글씨는 차분하게 */
+.drag-hint--list {
+  padding: 4px 0 8px;
+}
+.drag-hint--list .drag-hint__arrow {
+  scale: 1 -1;
+}
+.drag-hint--list p {
   color: var(--muted-fg);
 }
-.topic-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 20px 8px;
+@keyframes drag-hint-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  40% {
+    translate: 0 -5px;
+  }
 }
-.topic-header h1 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 19px;
+@media (prefers-reduced-motion: reduce) {
+  .drag-hint__arrow {
+    animation: none;
+  }
 }
-.topic-header h1 img {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
+/* 하쿠 화면 안에서는 하쿠 바로 아래(그림자 밑)에 붙고, 잡는 영역은 가로 전체로 둔다 */
+#stage .drag-hint {
+  align-self: stretch;
+  margin-top: 4px;
 }
-.topic-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.topic-edit {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-}
-.topic-edit input {
-  flex: 1;
-  height: 34px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-tint);
-  color: var(--foreground);
-  outline: none;
-}
-.topic-edit input:focus {
-  border-color: var(--primary);
-}
-
-/* 시험지 */
-.quiz-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 20px 8px;
-}
-.quiz-header h1 {
-  flex: 1;
-  padding-right: 28px;
+/* 캐릭터 화면의 말풍선 하나(#stage-bubble). 인사말 칸(.chat-greeting)을 그대로 쓰되,
+   대화 중에는 하쿠의 긴 말도 들어가야 하므로 높이를 글 길이에 맞춘다.
+   인사말이든 하쿠의 대답이든 글꼴(Pretendard 700)은 .chat-greeting 그대로 같게 보인다. */
+#stage-bubble.chat-greeting--talk {
+  width: auto;
+  max-width: 320px;
+  height: auto;
+  min-height: 49px;
+  padding: 12px 18px;
+  line-height: 1.5;
   text-align: center;
-  font-size: 14px;
+  word-break: keep-all;
+}
+#stage-bubble.typing-dots {
+  display: flex;
+  justify-content: center;
+}
+/* 정오 판별에서 틀렸을 때 말풍선 위에 뜨는 빨간 알림 (내용은 목록의 알림과 같다) */
+.stage-feedback {
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 12px;
+}
+.stage-feedback .system {
+  margin-bottom: 0;
+}
+/* 대화 중에는 인사말 화면보다 위쪽 여백을 줄여서, 긴 말풍선·손잡이·빠른 버튼이 한 화면에 들어오게 한다 */
+#stage.stage--swipeable {
+  padding-top: 40px;
+}
+/* 대화 중 하쿠 화면은 아무 데서나 위로 쓸어 올려도 목록이 열린다 (chat.js).
+   그 세로 쓸기를 브라우저 스크롤이 가로채지 않게 하고, 끄는 동안 글자가 선택되지 않게 한다 */
+.stage--swipeable {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* 모든 화면 공통 상단 바: 왼쪽 삼선(☰) 메뉴 + 화면 제목 + (있으면) 오른쪽에 그 화면 전용 버튼 */
+.topbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  min-height: 64px;
+  padding: 12px 20px 8px 6px;
+}
+.topbar .chat__menu {
+  padding: 12px 14px;
+}
+.topbar__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 19px;
   font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.topbar__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
 }
 .quiz-title {
   font-size: 24px;
@@ -891,16 +1032,25 @@ body[data-page="chat"] #message-list {
   width: 12px;
   height: 12px;
 }
+/* 문제 카드: 강조선·그림자 없이 얇은 회색 테두리 하나로 담백하게 */
 .q-card {
   margin-top: 12px;
   padding: 14px 16px;
-  border-radius: 18px;
-  border-left: 3px solid var(--primary);
+  border: 1px solid #e3e5ea;
+  border-radius: 14px;
+  background: #fbfbfd;
+  box-shadow: none;
 }
 .q-card__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.q-card__type {
+  margin-left: 2px;
   font-size: 11px;
-  font-weight: 700;
-  color: var(--primary);
+  font-weight: 500;
+  color: var(--muted-fg);
 }
 .q-card__text {
   margin-top: 6px;
@@ -929,8 +1079,8 @@ body[data-page="chat"] #message-list {
   font: inherit;
   font-size: 12px;
   resize: none;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid #e3e5ea;
+  border-radius: 12px;
   background: var(--card);
   outline: none;
 }
@@ -992,10 +1142,10 @@ body[data-page="chat"] #message-list {
 }
 /* 채점 결과 (quiz.js 의 applyGrades) */
 .q-card--correct {
-  border-left-color: #2da44e;
+  border-color: #2da44e;
 }
 .q-card--wrong {
-  border-left-color: #e5484d;
+  border-color: #e5484d;
 }
 .q-result {
   margin-top: 8px;
@@ -1036,17 +1186,6 @@ body[data-page="chat"] #message-list {
 }
 
 /* 학습 기록 */
-.history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px 12px;
-}
-.history-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
 .session {
   display: flex;
   align-items: center;
@@ -1057,6 +1196,34 @@ body[data-page="chat"] #message-list {
   text-decoration: none;
   color: inherit;
 }
+/* 빈틈 시험지 목록의 정렬 기준 (작은 알약 버튼 3개, 고른 것만 파랗게) */
+.sort-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 0 20px 12px;
+}
+.sort-tab {
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted-fg);
+  cursor: pointer;
+}
+.sort-tab[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+.sort-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .session__link {
   display: flex;
   flex: 1;
@@ -1066,7 +1233,7 @@ body[data-page="chat"] #message-list {
   text-decoration: none;
   color: inherit;
 }
-.session__delete {
+.session__action {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1080,16 +1247,44 @@ body[data-page="chat"] #message-list {
   color: var(--muted-fg);
   cursor: pointer;
 }
-.session__delete svg {
+.session__action svg {
   width: 16px;
   height: 16px;
 }
-.session__delete:active {
+.session__action:active {
   opacity: 0.6;
 }
-.session__delete:disabled {
+.session__action:disabled {
   opacity: 0.3;
   cursor: wait;
+}
+/* 주제 이름 수정 칸: 연필을 누르면 카드 안의 링크·버튼 대신 보인다 */
+.session__edit {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session__edit input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  outline: none;
+}
+.session__edit input:focus {
+  border-color: var(--primary);
+}
+.session__edit .pill {
+  flex-shrink: 0;
 }
 .session img {
   width: 40px;
@@ -1164,42 +1359,6 @@ body[data-page="chat"] #message-list {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted-fg);
-}
-
-/* 하단 탭 바 (채팅 / 학습 기록 / 프로필) — nav.js가 매번 그려 넣는다 */
-.bottom-nav {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-around;
-  padding: 6px 8px calc(10px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--border);
-  background: var(--card);
-}
-.bottom-nav__item {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 6px 4px;
-  border: 0;
-  border-radius: 14px;
-  background: none;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--muted-fg);
-  text-decoration: none;
-  cursor: pointer;
-}
-.bottom-nav__item svg {
-  width: 20px;
-  height: 20px;
-}
-.bottom-nav__item.is-active {
-  color: var(--primary);
-  background: var(--surface-tint);
 }
 
 /* 하쿠가 답을 준비 중일 때 말풍선 안에서 통통 튀는 점 세 개 */
@@ -1598,7 +1757,8 @@ a.gap-item__row:active {
 }
 
 /* 타이핑 효과 — 하쿠가 한 글자씩 말하는 동안 끝에 커서가 깜빡인다 */
-.bubble--sensei.is-typing::after {
+.bubble--sensei.is-typing::after,
+#stage-bubble.is-typing::after {
   content: "";
   display: inline-block;
   width: 2px;
@@ -1733,4 +1893,76 @@ body.menu-open {
 .menu__logout:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* 환영 화면 (chat.js 의 showWelcome) — 앱을 다시 켰을 때 채팅 화면 위에 잠깐 덮인다 */
+.welcome {
+  /* 대화가 길어 화면이 스크롤돼도 보이는 화면 한가운데에 오도록 fixed. 폭은 폰 셸(.phone)과 같게 맞춘다. */
+  position: fixed;
+  inset: 0;
+  max-width: 390px;
+  margin: 0 auto;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px 16px;
+  background: linear-gradient(180deg, var(--card) 0%, var(--surface-tint) 100%);
+  cursor: pointer;
+  animation: welcome-in 0.35s ease-out;
+}
+/* 구름 장식(.cloud, absolute)이 말풍선과 하쿠 위로 올라오지 않게 */
+.welcome > :not(.cloud) {
+  position: relative;
+  z-index: 1;
+}
+.welcome.is-leaving {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.welcome__bubble {
+  max-width: 300px;
+  text-align: center;
+  animation: welcome-pop 0.45s 0.15s ease-out both;
+}
+.welcome__mascot img {
+  width: 200px;
+  height: auto;
+  animation: welcome-bob 2.4s ease-in-out infinite;
+}
+.welcome__sub {
+  font-size: 13px;
+  color: var(--muted-fg);
+}
+.welcome__start {
+  padding: 12px 28px;
+  font-size: 14px;
+}
+@keyframes welcome-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes welcome-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+@keyframes welcome-bob {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome,
+  .welcome__bubble,
+  .welcome__mascot img {
+    animation: none;
+  }
+  .welcome.is-leaving {
+    transition: none;
+  }
 }

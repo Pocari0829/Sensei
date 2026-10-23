@@ -27,8 +27,28 @@
           <img class="login-mascot__question" src="../../public/icon-question.svg" alt="" />
         </div>
 
-        <!-- 실제 로그인은 아래 소셜 로그인 버튼으로 이루어진다. 이 버튼은 그쪽으로 시선을 모은다 -->
-        <button type="button" class="login-primary" id="login-scroll-btn">로그인</button>
+        <!-- 이메일 로그인 / 회원가입. 아래 "회원가입" 을 누르면 같은 칸이 회원가입 모양으로 바뀐다 (login.js) -->
+        <form class="login-form" id="login-form" novalidate>
+          <input class="login-input" type="email" id="login-email" placeholder="이메일" autocomplete="email" required />
+          <input
+            class="login-input"
+            type="password"
+            id="login-password"
+            placeholder="비밀번호"
+            autocomplete="current-password"
+            required
+          />
+          <input
+            class="login-input"
+            type="password"
+            id="login-password-confirm"
+            placeholder="비밀번호 확인"
+            autocomplete="new-password"
+            hidden
+          />
+          <button type="submit" class="login-primary" id="login-submit">로그인</button>
+        </form>
+        <p class="login-info" id="login-info" role="status" hidden></p>
 
         <div class="login-social">
           <p class="login-social__label"><span>소셜 로그인</span></p>
@@ -44,7 +64,8 @@
 
         <p class="login-error" id="login-error" role="alert" hidden></p>
         <p class="login-fineprint">
-          아직 SENSEI 회원이 아니신가요?<span class="login-fineprint__link">회원가입</span>
+          <span id="login-mode-text">아직 SENSEI 회원이 아니신가요?</span
+          ><button type="button" class="login-fineprint__link" id="login-mode-btn">회원가입</button>
         </p>
       </div>
     </div>

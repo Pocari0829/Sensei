@@ -9,12 +9,24 @@
 // - 자동 로그인(One Tap): 전에 로그인한 적이 있으면 버튼을 누르지 않아도 Google 이 알아서 로그인시킨다.
 // 어느 쪽이든 Google 이 준 ID 토큰을 Supabase 에 넘겨서 로그인을 마친다.
 //
+// 이메일 로그인 / 회원가입은 위쪽 입력칸으로 한다. 아래 "회원가입" 을 누르면 같은 칸이 회원가입 모양으로 바뀐다.
+// 회원가입은 Supabase 의 설정에 따라 인증 메일을 보내고, 메일의 링크를 누르면 이 페이지로 돌아와 로그인된다.
+//
 // 카카오 로그인은 우리가 만든 버튼이다. 누르면 이 탭이 카카오 로그인 화면으로 이동했다가,
 // 로그인이 끝나면 이 페이지로 돌아온다. 돌아왔을 때 로그인돼 있으면 init() 이 채팅으로 보낸다.
 // ─────────────────────────────────────────────
 
 import { GOOGLE_CLIENT_ID } from "./config.js";
-import { HOME_PAGE, NICKNAME_PAGE, getCurrentUser, signInWithGoogleToken, signInWithKakao } from "./auth.js";
+import {
+  HOME_PAGE,
+  NICKNAME_PAGE,
+  PASSWORD_MIN,
+  getCurrentUser,
+  signInWithEmail,
+  signInWithGoogleToken,
+  signInWithKakao,
+  signUpWithEmail,
+} from "./auth.js";
 import { getNickname } from "./user.js";
 
 /**
@@ -36,21 +48,95 @@ async function goAfterLogin() {
 const googleBtnHost = document.getElementById("google-login-btn");
 const kakaoBtn = document.getElementById("kakao-login-btn");
 const errorEl = document.getElementById("login-error");
-const loginScrollBtn = document.getElementById("login-scroll-btn");
-
-// "로그인" 버튼은 실제 로그인 기능이 없다(이메일/비밀번호 로그인 미지원).
-// 눌리면 실제 로그인 수단인 소셜 로그인 쪽으로 시선을 모은다.
-loginScrollBtn?.addEventListener("click", () => {
-  const social = document.querySelector(".login-social");
-  social?.scrollIntoView({ behavior: "smooth", block: "center" });
-  social?.classList.add("is-highlight");
-  setTimeout(() => social?.classList.remove("is-highlight"), 900);
-});
+const infoEl = document.getElementById("login-info");
+const form = document.getElementById("login-form");
+const emailInput = document.getElementById("login-email");
+const passwordInput = document.getElementById("login-password");
+const confirmInput = document.getElementById("login-password-confirm");
+const submitBtn = document.getElementById("login-submit");
+const modeText = document.getElementById("login-mode-text");
+const modeBtn = document.getElementById("login-mode-btn");
 
 function showError(message) {
+  infoEl.hidden = true;
   errorEl.textContent = message;
   errorEl.hidden = false;
 }
+
+/** 오류가 아닌 안내 (예: "인증 메일을 보냈어요") */
+function showInfo(message) {
+  errorEl.hidden = true;
+  infoEl.textContent = message;
+  infoEl.hidden = false;
+}
+
+// ─────────────────────────────────────────────
+// 이메일 로그인 / 회원가입
+// ─────────────────────────────────────────────
+let signUpMode = false;
+
+/** 로그인 ↔ 회원가입 모양을 바꾼다. 입력한 이메일은 그대로 둔다. */
+function setSignUpMode(on) {
+  signUpMode = on;
+  confirmInput.hidden = !on;
+  confirmInput.value = "";
+  passwordInput.autocomplete = on ? "new-password" : "current-password";
+  passwordInput.placeholder = on ? `비밀번호 (${PASSWORD_MIN}자 이상)` : "비밀번호";
+  submitBtn.textContent = on ? "회원가입" : "로그인";
+  modeText.textContent = on ? "이미 SENSEI 회원이신가요?" : "아직 SENSEI 회원이 아니신가요?";
+  modeBtn.textContent = on ? "로그인" : "회원가입";
+  errorEl.hidden = true;
+  infoEl.hidden = true;
+}
+
+modeBtn.addEventListener("click", () => {
+  setSignUpMode(!signUpMode);
+  emailInput.focus();
+});
+
+/** 입력값 검사. 문제가 있으면 안내 문구, 없으면 null. */
+function checkInputs(email, password) {
+  if (!email || !emailInput.checkValidity()) return "이메일을 올바르게 입력해 주세요.";
+  if (!password) return "비밀번호를 입력해 주세요.";
+  if (signUpMode && password.length < PASSWORD_MIN) return `비밀번호는 ${PASSWORD_MIN}자 이상으로 정해 주세요.`;
+  if (signUpMode && password !== confirmInput.value) return "비밀번호 확인이 맞지 않아요.";
+  return null;
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = emailInput.value.trim();
+  const password = passwordInput.value;
+  const problem = checkInputs(email, password);
+  if (problem) {
+    showError(problem);
+    return;
+  }
+
+  submitBtn.disabled = true;
+  errorEl.hidden = true;
+  infoEl.hidden = true;
+  try {
+    if (signUpMode) {
+      const { needsConfirm } = await signUpWithEmail(email, password);
+      if (needsConfirm) {
+        // 메일 인증을 기다린다. 링크를 누르면 이 페이지로 돌아와서 init() 이 로그인된 것을 보고 넘어간다.
+        setSignUpMode(false);
+        emailInput.value = email;
+        showInfo(`${email} 로 인증 메일을 보냈어요. 메일의 링크를 누르면 로그인돼요.`);
+        return;
+      }
+    } else {
+      await signInWithEmail(email, password);
+    }
+    // 처음 가입한 사람은 닉네임이 없으므로 이름 정하기 화면으로 간다.
+    await goAfterLogin();
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
 
 /** 카카오에서 돌아올 때 실패했으면(취소, 설정 오류 등) 주소에 error_description 이 붙어 온다. */
 function readLoginError() {

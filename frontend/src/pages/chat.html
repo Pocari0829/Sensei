@@ -15,66 +15,48 @@
   </head>
   <body data-page="chat">
     <div class="phone">
-      <!-- 화면 이동은 이 삼선 메뉴로만 한다 (하단 탭바 없음) -->
-      <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu" aria-expanded="false">
-        <img src="../../public/icon-menu.svg" alt="" />
-      </button>
+      <!-- 상단 바: 삼선(☰) 메뉴 + 대화 중이면 주제 이름. 화면 이동은 ☰ 메뉴로 한다 (모든 화면 공통 .topbar) -->
+      <header class="topbar">
+        <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu" aria-expanded="false">
+          <img src="../../public/icon-menu.svg" alt="" />
+        </button>
+        <!-- 첫 메시지를 보내면 주제 이름이 보인다. 주제 이름 수정/삭제는 학습 기록 화면에서 한다 -->
+        <h1 class="topbar__title" id="topic-header" hidden><span id="topic-name">주제</span></h1>
+      </header>
 
-      <!-- 대화가 시작되면 이전 대화를 드래그해서 보라는 힌트가 나타난다 -->
-      <div class="drag-hint" id="drag-hint" hidden>
-        <span class="drag-hint__bar"></span>
-        <p>드래그해서 이전 대화 보기</p>
-      </div>
-
-      <!-- 첫 메시지를 보내면 주제 이름이 채워지는 헤더로 바뀐다 -->
-      <div class="topic-header" id="topic-header" hidden>
-        <h1 id="topic-display">
-          <span id="topic-name">주제</span>
-          <img src="../../public/mascot.png" alt="" />
-        </h1>
-
-        <!-- 주제 이름 수정 모드: 연필 버튼을 누르면 h1 대신 이게 보인다 -->
-        <div class="topic-edit" id="topic-edit" hidden>
-          <input type="text" id="topic-input" maxlength="20" aria-label="주제 이름 입력" />
-          <button type="button" class="icon-btn icon-btn--sm icon-btn--primary" id="topic-save-btn" aria-label="주제 이름 저장">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M5 13l4 4L19 7" />
-            </svg>
-          </button>
-        </div>
-
-        <div class="topic-actions" id="topic-actions">
-          <button type="button" class="icon-btn icon-btn--sm" id="edit-topic-btn" aria-label="주제 이름 수정">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-            </svg>
-          </button>
-          <button type="button" class="icon-btn icon-btn--sm" id="new-topic-btn" aria-label="새 주제 추가">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- 메시지가 하나도 없을 때: 인사말 + 마스코트 (시안 문구 그대로: "안녕!") -->
-      <main class="chat__empty" id="empty-state">
-        <div class="chat-greeting">안녕!</div>
+      <!--
+        캐릭터 화면(기본 화면). 대화 전에는 인사말(시안 문구 그대로 "안녕!"), 대화 중에는 하쿠의 최신 말 하나만
+        말풍선에 띄워서 "캐릭터와 계속 대화하는" 느낌을 유지한다. 내용은 chat.js 의 renderStage() 가 채운다.
+        대화 중에는 이 화면 아무 데서나 위로 쓸어 올려도 전체 대화 목록(#message-list)이 열린다.
+      -->
+      <main class="chat__empty" id="stage">
+        <!-- 정오 판별에서 틀렸을 때 말풍선 위에 뜨는 알림 -->
+        <div class="stage-feedback" id="stage-feedback" hidden></div>
+        <!-- 처음에는 숨겨 둔다. 대화를 불러온 뒤 chat.js 의 renderStage() 가 내용을 채우고 켠다 -->
+        <div class="chat-greeting" id="stage-bubble" hidden>안녕!</div>
         <div class="chat-mascot" aria-hidden="true">
           <img class="chat-mascot__img" src="../../public/mascot.png" alt="" />
           <img class="chat-mascot__shadow" src="../../public/haku-shadow.png" alt="" />
         </div>
       </main>
 
-      <!-- 대화가 시작되면 여기에 말풍선들이 JS로 채워진다 -->
+      <!--
+        대화가 시작되면 보이는 손잡이. 드래그(또는 탭)해서 하쿠 화면 ↔ 전체 대화 목록을 오간다.
+        하쿠 화면에서는 #stage 안 하쿠 바로 아래, 목록에서는 목록 맨 위에 붙는다 (chat.js 의 render()가 옮긴다).
+      -->
+      <div class="drag-hint" id="drag-hint" role="button" tabindex="0" hidden>
+        <svg class="drag-hint__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m6 15 6-6 6 6" />
+        </svg>
+        <span class="drag-hint__bar"></span>
+        <p id="drag-hint-text">위로 올려서 전체 대화 보기</p>
+      </div>
+
+      <!-- 손잡이를 드래그(또는 탭)해야 보이는 전체 대화 목록 -->
       <div class="scroll" id="message-list" style="padding: 0 16px 12px" hidden></div>
+
+      <!-- 저장 실패 등 시스템 알림. 캐릭터 화면/목록 어느 쪽을 보고 있어도 항상 이 자리에 뜬다 -->
+      <div id="alert-banner" class="alert-banner" hidden></div>
 
       <div class="quick-actions" id="quick-actions" hidden>
         <button type="button" class="pill" id="easier-btn">더 쉽게</button>
@@ -90,13 +72,15 @@
           aria-label="설명 입력"
           autocomplete="off"
         />
+        <!-- 하쿠가 대답을 만드는 동안에는 [멈추기] 버튼으로 바뀐다 (chat.js 의 setSending) -->
         <button class="send" type="submit" id="send-btn" aria-label="보내기">
           <img src="../../public/icon-send.svg" alt="" />
+          <span class="send__stop" aria-hidden="true"></span>
         </button>
       </form>
     </div>
 
-    <!-- 삼선 메뉴(서랍). 하단 탭바 대신 이 메뉴로만 화면을 이동한다 -->
+    <!-- 삼선 메뉴(서랍). 화면 이동 메뉴 (menu.js). 모든 화면이 같은 서랍을 쓴다 -->
     <div class="menu-overlay" id="menu-overlay"></div>
     <nav class="menu" id="menu" aria-label="메뉴" aria-hidden="true" inert>
       <button class="menu__close" type="button" id="btn-menu-close" aria-label="메뉴 닫기"></button>
@@ -105,9 +89,10 @@
         <p class="menu__sub">하쿠의 선생님</p>
       </div>
       <ul class="menu__list">
-        <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat" aria-current="page">새 대화</a></li>
+        <li><a class="menu__item" href="./chat.html" id="menu-chat" aria-current="page">채팅</a></li>
+        <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat">새 대화</a></li>
         <li><a class="menu__item" href="./history.html" id="menu-history">학습 기록</a></li>
-        <li><a class="menu__item" href="./quiz.html" id="menu-test">빈틈 시험지</a></li>
+        <li><a class="menu__item" href="./quiz-list.html" id="menu-test">빈틈 시험지</a></li>
         <li><a class="menu__item" href="./profile.html" id="menu-profile">프로필</a></li>
       </ul>
       <button class="menu__logout" type="button" id="btn-logout">로그아웃</button>

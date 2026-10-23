@@ -12,28 +12,20 @@
   </head>
   <body>
     <div class="phone">
-      <div class="statusbar">
-        <span>9:41</span>
-        <div class="statusbar__icons">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="battery"></span>
+      <header class="topbar">
+        <button class="chat__menu" type="button" id="btn-menu" aria-label="메뉴 열기" aria-controls="menu" aria-expanded="false">
+          <img src="../../public/icon-menu.svg" alt="" />
+        </button>
+        <h1 class="topbar__title">시험지</h1>
+        <div class="topbar__actions">
+          <!-- 풀던 대화로 바로 돌아가는 버튼 (☰ 메뉴에는 "이어서 대화하기"가 없어서 따로 둔다) -->
+          <a class="icon-btn" href="./chat.html" aria-label="대화로 돌아가기">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+          </a>
         </div>
-      </div>
-
-      <div class="quiz-header">
-        <a class="icon-btn" href="./chat.html" aria-label="뒤로 가기">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-        </a>
-        <h1>시험지</h1>
-      </div>
+      </header>
 
       <div class="scroll" style="padding: 0 20px 12px">
         <div>
@@ -54,15 +46,15 @@
         </div>
 
         <div class="card q-card">
-          <p class="q-card__label">Q 1</p>
+          <p class="q-card__label">문제 1.</p>
           <p class="q-card__text">단백질 2차 구조의 종류 두 가지와 이를 유지하는 결합을 쓰시오.</p>
-          <textarea rows="2" placeholder="답을 입력하세요..." aria-label="Q 1 답안"></textarea>
+          <textarea rows="2" placeholder="답을 입력하세요..." aria-label="문제 1 답안"></textarea>
         </div>
 
         <div class="card q-card">
-          <p class="q-card__label">Q 2</p>
+          <p class="q-card__label">문제 2.</p>
           <p class="q-card__text">아미노산의 구성 원소 5가지를 모두 쓰시오.</p>
-          <textarea rows="2" placeholder="답을 입력하세요..." aria-label="Q 2 답안"></textarea>
+          <textarea rows="2" placeholder="답을 입력하세요..." aria-label="문제 2 답안"></textarea>
         </div>
       </div>
 
@@ -80,12 +72,31 @@
       </div>
     </div>
 
+    <!-- 삼선 메뉴(서랍). 화면 이동 메뉴 (menu.js). 모든 화면이 같은 서랍을 쓴다 -->
+    <div class="menu-overlay" id="menu-overlay"></div>
+    <nav class="menu" id="menu" aria-label="메뉴" aria-hidden="true" inert>
+      <button class="menu__close" type="button" id="btn-menu-close" aria-label="메뉴 닫기"></button>
+      <div class="menu__user">
+        <p class="menu__name" id="menu-nickname">닉네임</p>
+        <p class="menu__sub">하쿠의 선생님</p>
+      </div>
+      <ul class="menu__list">
+        <li><a class="menu__item" href="./chat.html" id="menu-chat">채팅</a></li>
+        <li><a class="menu__item" href="./chat.html?new" id="menu-new-chat">새 대화</a></li>
+        <li><a class="menu__item" href="./history.html" id="menu-history">학습 기록</a></li>
+        <li><a class="menu__item" href="./quiz-list.html" id="menu-test" aria-current="page">빈틈 시험지</a></li>
+        <li><a class="menu__item" href="./profile.html" id="menu-profile">프로필</a></li>
+      </ul>
+      <button class="menu__logout" type="button" id="btn-logout">로그아웃</button>
+    </nav>
+
     <!--
       참고: 시험지 문항 생성은 아직 백엔드에 연결돼 있지 않다 (app.py의 /generate-quiz는 주석 처리된 상태).
       지금은 상단 주제 이름만 채팅 화면에서 넘어온 topic 쿼리 파라미터로 채우고,
       문항 내용 자체는 예시 그대로 둔다.
     -->
     <script type="module" src="../scripts/guard.js"></script>
+    <script type="module" src="../scripts/menu.js"></script>
     <script type="module" src="../scripts/quiz.js"></script>
     <script type="module" src="../scripts/pwa.js"></script>
   </body>
